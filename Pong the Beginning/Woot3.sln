@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual C++ Express 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Woot3", "Woot3\Woot3.vcxproj", "{7B6D91C1-59A5-48DF-8ABC-1552B45431F9}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7B6D91C1-59A5-48DF-8ABC-1552B45431F9}.Debug|Win32.ActiveCfg = Debug|Win32
+		{7B6D91C1-59A5-48DF-8ABC-1552B45431F9}.Debug|Win32.Build.0 = Debug|Win32
+		{7B6D91C1-59A5-48DF-8ABC-1552B45431F9}.Release|Win32.ActiveCfg = Release|Win32
+		{7B6D91C1-59A5-48DF-8ABC-1552B45431F9}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
