@@ -83,8 +83,6 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Bouncers.cpp" />
-    <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="Woot3.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
