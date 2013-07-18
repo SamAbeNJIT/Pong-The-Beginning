@@ -15,7 +15,7 @@ Ball* ball1;
 
 int fps = 0;
 int startTime = time(NULL);
-int endTime = time(NULL)+100;
+int endTime = time(NULL)+1;
 
 int screenHeight = 585;
 int screenWidth = 585; 
@@ -103,9 +103,8 @@ int main()
 	int selection;
 
 	//get number of players
-	cout<<"Welcome to Pong!"<<endl;
+	cout<<"Welcome to Pang!"<<endl;
 	cout<<"1. One player"<<endl;
-	cout<<"2. Two players"<<endl;
 	cin>>selection;
 
 	if(selection==1)
