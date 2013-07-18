@@ -13,8 +13,9 @@ using namespace sf;
 
 Ball::Ball(void)
 {
-	speed = 750;
+	speed = 700;
 	shape = new CircleShape(10); 
+	shape->setPosition(100,100);
 
 	velocity.x = 0;
 	velocity.y = 0;

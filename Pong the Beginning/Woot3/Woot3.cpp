@@ -4,6 +4,7 @@
 #include <iostream>
 #include "Bar.h"
 #include "Ball.h"
+
 #pragma once
 
 using namespace std;
@@ -30,13 +31,34 @@ void test()
 	iCharacter.loadFromFile("test.png");
 }
 
+bool intersectCircleAABB( Vector2f center, float radius, Vector2f min, Vector2f max )
+{
+	Vector2f closestPoint(center);
+    if( center.x < min.x ) 
+		closestPoint.x = min.x;
+    else if( center.x > max.x ) 
+		closestPoint.x = max.x;
+    if( center.y < min.y ) 
+		closestPoint.y = min.y;
+    else if( center.y > max.y ) 
+		closestPoint.y = max.y;
+    
+	Vector2f diff;
+    diff.x = closestPoint.x - center.x ;
+	diff.y = closestPoint.y - center.y ;
+    if( diff.x * diff.x + diff.y * diff.y > radius * radius ) 
+		return false;
+    
+    return true; 
+}
+
 void init()
 {
 	window = new RenderWindow(VideoMode(screenWidth, screenHeight), "Pong: The Beginning");
 
 	ball1 = new Ball();
-	ball1->velocity.x = 456;
-	ball1->velocity.y = 300;
+	ball1->velocity.x = 5;
+	ball1->velocity.y = 23;
 	bar1 = new Bar();
 }
 
@@ -84,6 +106,12 @@ void update(float deltaTime)
 	if(ball1->getPosition().y < screenHeight1)
 	{
 		ball1->velocity.y = -ball1->velocity.y;
+	}
+	Vector2f lowRight = bar1->rec->getPosition();
+	lowRight += bar1->rec->getSize();
+	if(intersectCircleAABB(ball1->getPosition(), ball1->shape->getRadius(), bar1->rec->getPosition(), lowRight))
+	{
+		ball1->velocity.x = -ball1->velocity.x;
 	}
 	
 }
