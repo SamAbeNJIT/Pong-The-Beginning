@@ -3,6 +3,7 @@
 #include <time.h>
 #include <iostream>
 #include "Bar.h"
+#include "Ball.h"
 #pragma once
 
 using namespace std;
@@ -10,15 +11,18 @@ using namespace sf;
 
 Bar* bar1;
 RenderWindow* window;
-CircleShape* shape;
+Ball* ball1;
 
 int fps = 0;
 int startTime = time(NULL);
-int endTime = time(NULL)+1;
+int endTime = time(NULL)+100;
 
-Vector2f pullVector(0.0f, 0.001f);
-Vector2f velocity(-100.0f, 100.0f);
-Vector2f position(400.0f, 400.0f);
+int screenHeight = 585;
+int screenWidth = 585; 
+int screenWidth1 = 5;
+int screenHeight1 = 5;
+
+
 
 void test()
 {    
@@ -28,14 +32,11 @@ void test()
 
 void init()
 {
-	window = new RenderWindow(VideoMode(800, 800), "Pong: The Beginning");
+	window = new RenderWindow(VideoMode(screenWidth, screenHeight), "Pong: The Beginning");
 
-	shape = new CircleShape(10);
-	shape->setFillColor(Color(1, 1, 1));
-
-	shape->setOutlineThickness(5);
-	shape->setOutlineColor(sf::Color(250, 250, 250));
-
+	ball1 = new Ball();
+	ball1->velocity.x = 456;
+	ball1->velocity.y = 300;
 	bar1 = new Bar();
 }
 
@@ -43,22 +44,55 @@ void update(float deltaTime)
 {
 	Vector2f move(0,0);
 
+
 	if (Keyboard::isKeyPressed(Keyboard::Up))
-	{
-		move.x = move.x - bar1->speed;
-	}
+	
+		{
+			move.y = move.y - bar1->speed;
+		}
+	
 	if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down))
-	{
-		move.x = move.x + bar1->speed;
-	}
+	
+		{
+			move.y = move.y + bar1->speed;
+		}
+	
 	bar1->move( move * deltaTime);
+
+	if(ball1->getPosition().y > screenHeight)
+	
+	{
+			if(ball1->velocity.y > 0)
+				{
+					ball1->velocity.y = -ball1->velocity.y;
+				}
+	}
+		
+	if(ball1->getPosition().x > screenWidth )
+	
+		{
+			ball1->velocity.x = -ball1->velocity.x;
+		}
+	
+	ball1->update(deltaTime);
+
+	if(ball1->getPosition().x < screenWidth1 ) 
+		
+		{
+			
+		}
+	if(ball1->getPosition().y < screenHeight1)
+	{
+		ball1->velocity.y = -ball1->velocity.y;
+	}
+	
 }
 
 void draw(float deltaTime)
 {
 	window->clear(sf::Color::Black);
 
-	window->draw(*shape);
+	window->draw(*(ball1->shape));
 	window->draw(*bar1->rec);
 
 	window->display();

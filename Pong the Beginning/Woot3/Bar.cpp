@@ -6,10 +6,10 @@ Bar::Bar(void)
 {
 	rec = new RectangleShape(Vector2f(50,100));
 	rec->setSize(Vector2f(10, 100));
-
-	speed = 100;
+	rec->setPosition(10,0);
+	
+	speed = 500;
 }
-
 
 Bar::~Bar(void)
 {
