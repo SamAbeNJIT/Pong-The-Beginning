@@ -13,7 +13,7 @@ using namespace sf;
 
 Ball::Ball(void)
 {
-	speed = 700;
+	speed = 750;
 	shape = new CircleShape(10); 
 	shape->setPosition(100,100);
 

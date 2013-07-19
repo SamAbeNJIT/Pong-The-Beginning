@@ -57,8 +57,8 @@ void init()
 	window = new RenderWindow(VideoMode(screenWidth, screenHeight), "Pong: The Beginning");
 
 	ball1 = new Ball();
-	ball1->velocity.x = 5;
-	ball1->velocity.y = 23;
+	ball1->velocity.x = 321;
+	ball1->velocity.y = 123;
 	bar1 = new Bar();
 }
 
@@ -101,7 +101,7 @@ void update(float deltaTime)
 	if(ball1->getPosition().x < screenWidth1 ) 
 		
 		{
-			
+			system("exit");
 		}
 	if(ball1->getPosition().y < screenHeight1)
 	{
