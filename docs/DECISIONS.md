@@ -13,3 +13,7 @@ Newest entries go at the bottom. Format: what we decided, why, and what else we 
 **005 · Default model `claude-opus-5`, overridable with `FORGE_MODEL`.** Uses adaptive thinking, xhigh effort for build and repair, and server-side refusal fallbacks.
 
 **006 · Procedural art and synthesized audio only in v0.** No asset pipeline yet, and it removes loading failures. Asset APIs come in Phase 1.
+
+**007 · "Shipped" means shipped with no human edits.** A game counts only if the playtest passes and the critic says ship within the round limit. Cost is estimated from token usage × list price per game (`forge/usage.json`), so the numbers stay comparable across runs. *Alternatives:* human-rated only (too slow for a daily loop; that comes in Phase 1 as a second metric).
+
+**008 · Offline pipeline tests against a mock Messages API.** CI covers design → build → repair → critic → eval without a key or network, which catches plumbing regressions for free. Real-model quality lives in `forge eval`, not in CI.

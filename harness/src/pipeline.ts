@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseFiles, readSource, renderSource, writeFiles } from "./files.ts";
-import { generateObject, generateText, pngBlock } from "./llm.ts";
+import { currentUsage, formatUsage, generateObject, generateText, pngBlock } from "./llm.ts";
 import { formatReport, playtest, type PlaytestReport } from "./playtest.ts";
 import { BUILD_SYSTEM, CRITIC_SYSTEM, DESIGN_SYSTEM, REPAIR_SYSTEM } from "./prompts.ts";
 import { Critique, GameSpec } from "./spec.ts";
@@ -99,14 +99,23 @@ export async function converge(dir: string, opts: RunOptions): Promise<{ shipped
 }
 
 async function finish(dir: string, log: string[], shipped: boolean, rounds: number) {
-  const header = `# Forge log\n\nResult: ${shipped ? "SHIPPED" : "NOT SHIPPED (out of rounds)"} after ${rounds} round(s)\n\n`;
+  const usage = currentUsage();
+  const cost = usage ? `Cost so far: ${formatUsage(usage)} (estimated from list prices)\n\n` : "";
+  const header = `# Forge log\n\nResult: ${shipped ? "SHIPPED" : "NOT SHIPPED (out of rounds)"} after ${rounds} round(s)\n\n${cost}`;
   await writeFile(path.join(dir, "forge", "log.md"), header + log.join("\n\n") + "\n");
+  if (usage) await writeFile(path.join(dir, "forge", "usage.json"), JSON.stringify(usage, null, 2) + "\n");
   return { shipped, rounds };
 }
 
-export async function create(vision: string, outRoot: string, opts: RunOptions & { engine?: GameSpec["engine"] }) {
+export async function create(
+  vision: string,
+  outRoot: string,
+  opts: RunOptions & { engine?: GameSpec["engine"]; slug?: string },
+) {
   console.log("— design");
   const spec = await design(vision, opts.engine);
+  // The slug becomes a folder name, so never trust it as a path.
+  spec.slug = (opts.slug ?? spec.slug).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "game";
   const dir = path.join(outRoot, spec.slug);
   console.log(`  ${spec.title} (${spec.engine}): ${spec.pitch}`);
   await writeShell(dir, spec);

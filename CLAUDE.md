@@ -17,12 +17,14 @@ Forge turns a game idea into a playable, tested game. It will grow into a creato
 npm install                                  # first time in a fresh container
 npm run typecheck && npm test                # must pass before every push
 npm run forge -- new "<vision>"              # needs ANTHROPIC_API_KEY
+npm run forge -- eval --limit 5              # eval set -> harness/evals/runs/<time>/summary.md
 npm run forge -- playtest ../games/<slug>    # no API calls
 npm run forge -- serve ../games/<slug>
 ```
 
 ## Layout
-- `harness/src/` is the pipeline: `pipeline.ts` (design, build, critic, repair loop), `playtest.ts`, `prompts.ts` (holds the game contract), `llm.ts`, `spec.ts`, `files.ts`, `template.ts`.
+- `harness/src/` is the pipeline: `pipeline.ts` (design, build, critic, repair loop), `playtest.ts`, `prompts.ts` (holds the game contract), `llm.ts` (API calls + cost ledger), `eval.ts`, `spec.ts`, `files.ts`, `template.ts`.
+- `harness/evals/visions.json` is the eval set. Record every real eval run in the PROGRESS results table.
 - `games/<slug>/` holds one static game each. `forge/` inside it keeps the vision, spec, log and screenshots.
 - `docs/` holds the roadmap, progress and decisions.
 
