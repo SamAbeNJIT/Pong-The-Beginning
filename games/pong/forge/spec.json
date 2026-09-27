@@ -1,0 +1,38 @@
+{
+  "title": "Pong: The Beginning",
+  "slug": "pong",
+  "pitch": "Classic neon Pong against a CPU paddle, first to 7.",
+  "engine": "phaser",
+  "genre": "arcade sports",
+  "coreLoop": "Move your paddle to return the ball; angle shots off the paddle edge to beat the CPU.",
+  "mechanics": [
+    "ball speeds up on every paddle hit",
+    "hit position on the paddle sets the return angle",
+    "CPU paddle tracks the ball with limited speed"
+  ],
+  "controls": [
+    { "key": "KeyW", "action": "move paddle up" },
+    { "key": "KeyS", "action": "move paddle down" },
+    { "key": "ArrowUp", "action": "move paddle up" },
+    { "key": "ArrowDown", "action": "move paddle down" }
+  ],
+  "startKey": "Space",
+  "winCondition": "Reach 7 points first.",
+  "loseCondition": "CPU reaches 7 points first.",
+  "entities": [
+    { "name": "player paddle", "description": "left side, cyan" },
+    { "name": "cpu paddle", "description": "right side, magenta" },
+    { "name": "ball", "description": "white square with a short trail" }
+  ],
+  "artDirection": "Dark background, dashed center line, glowing neon rectangles, big score digits.",
+  "palette": ["#0b0f1a", "#22d3ee", "#e879f9", "#f8fafc"],
+  "audio": "Short square-wave blips for paddle and wall hits, a low tone on a point.",
+  "difficulty": "CPU max speed is slightly below the ball's top speed so rallies are winnable.",
+  "outOfScope": ["two-player mode", "power-ups", "mouse or touch control"],
+  "acceptance": [
+    "Menu shows the title and 'Press SPACE'",
+    "Ball moves and bounces off top and bottom walls",
+    "Scores update when the ball passes a paddle",
+    "Game ends at 7 and shows a win or lose screen"
+  ]
+}

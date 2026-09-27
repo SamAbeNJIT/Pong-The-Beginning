@@ -1,0 +1,30 @@
+{
+  "name": "forge-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vision -> playable game. Design, build, playtest, repair.",
+  "type": "module",
+  "bin": {
+    "forge": "./src/cli.ts"
+  },
+  "scripts": {
+    "forge": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "phaser": "^3.90.0",
+    "playwright-core": "^1.63.0",
+    "three": "^0.186.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
