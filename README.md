@@ -45,7 +45,7 @@ Each game folder keeps its own record in `forge/`: `vision.md`, `spec.json`, `pl
 
 Every game exposes `window.__FORGE__ = { ready, state, score }`, where `state` is one of `menu | playing | paused | won | lost`. It boots into `menu`, and the spec's `startKey` starts it. No network requests and no external assets: art is procedural and audio is WebAudio. With this contract, any game can be tested automatically without knowing anything about it. The full text is in `harness/src/prompts.ts`.
 
-`games/pong/` is a hand-written reference game that passes the contract. It's a nod to this repo's high-school origins.
+`games/pong/` (a nod to this repo's high-school origins) and `games/neon-serpent/` are reference games that pass the contract.
 
 ## Layout
 
