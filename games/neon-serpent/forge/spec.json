@@ -1,0 +1,41 @@
+{
+  "title": "Neon Serpent",
+  "slug": "neon-serpent",
+  "pitch": "A neon snake that moves on the beat, and every bite speeds the music up.",
+  "engine": "phaser",
+  "genre": "arcade",
+  "coreLoop": "Steer toward the next glowing orb while the tempo, and your speed, keeps climbing.",
+  "mechanics": [
+    "the snake steps once per eighth note, so tempo is speed",
+    "each orb adds a segment, a point and +6 BPM",
+    "every step plays the next note of a synth arpeggio; a kick lands on every beat"
+  ],
+  "controls": [
+    { "key": "ArrowUp", "action": "turn up" },
+    { "key": "ArrowDown", "action": "turn down" },
+    { "key": "ArrowLeft", "action": "turn left" },
+    { "key": "ArrowRight", "action": "turn right" },
+    { "key": "KeyW", "action": "turn up" },
+    { "key": "KeyA", "action": "turn left" },
+    { "key": "KeyS", "action": "turn down" },
+    { "key": "KeyD", "action": "turn right" }
+  ],
+  "startKey": "Space",
+  "winCondition": "Eat 30 orbs.",
+  "loseCondition": "Hit a wall or your own tail.",
+  "entities": [
+    { "name": "serpent", "description": "cyan-to-violet gradient segments with a glow" },
+    { "name": "orb", "description": "pulsing pink orb that bursts into particles when eaten" }
+  ],
+  "artDirection": "Near-black grid, neon glow drawn as layered translucent rectangles, beat-synced pulse on the grid.",
+  "palette": ["#07060f", "#22d3ee", "#a78bfa", "#f472b6", "#e2e8f0"],
+  "audio": "WebAudio square-wave arpeggio per step, sine kick per beat, rising blip on eat, noise crash on death.",
+  "difficulty": "Starts at 96 BPM and caps at 276 BPM.",
+  "outOfScope": ["wrap-around walls", "power-ups", "leaderboards", "touch controls"],
+  "acceptance": [
+    "Menu shows the title and 'Press SPACE'",
+    "Snake moves continuously and turns with arrows/WASD",
+    "Eating an orb grows the snake, raises the score and audibly raises the tempo",
+    "Hitting a wall or tail shows a game-over screen; SPACE restarts"
+  ]
+}
