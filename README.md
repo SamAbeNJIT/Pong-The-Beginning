@@ -23,6 +23,7 @@ export ANTHROPIC_API_KEY=...                 # or: ant auth login
 npm run forge -- new "a neon snake game where eating makes the music faster"
 npm run forge -- serve ../games/<slug>       # play at http://127.0.0.1:5173
 npm run forge -- iterate ../games/<slug> "add a dash on Shift and a combo meter"
+npm run forge -- eval --limit 5              # build the eval set, report ship rate and $/game
 npm run forge -- playtest ../games/pong      # playtester only, no API calls
 npm test                                     # harness tests (needs Chromium)
 ```

@@ -4,3 +4,4 @@ node_modules/
 games/*/vendor/
 games/*/forge/screens/
 games/*/forge/playtest.json
+harness/evals/runs/
