@@ -1,0 +1,104 @@
+{
+  "title": "Gusty Descent",
+  "slug": "gusty-descent",
+  "pitch": "Pilot a fragile lunar lander through random wind gusts on a tight fuel budget and touch down softly on one of three pads, each worth a different score.",
+  "engine": "phaser",
+  "genre": "arcade physics / lander",
+  "coreLoop": "Watch the wind indicator, rotate and feather the main thruster to counter gravity and gusts, line up over the pad you're gambling on, and bleed off speed for a gentle, level touchdown before fuel runs dry.",
+  "mechanics": [
+    "Constant lunar gravity pulls the lander down; the main thruster pushes along the lander's facing direction and burns fuel while held",
+    "Rotation with left/right keys, clamped to +/-90 degrees from vertical; rotating costs no fuel",
+    "Wind: a horizontal force that changes every 3-6 seconds to a random value, with occasional short strong gusts; the next gust is telegraphed 1 second ahead by a flashing arrow on the HUD",
+    "Three landing pads on procedurally generated jagged terrain: a wide pad worth 1x, a medium pad worth 2x, and a narrow pad worth 3x, with the high-value pad placed in harder spots (in a valley or on a peak)",
+    "Safe landing requires both feet on a pad, vertical speed < 40 px/s, horizontal speed < 25 px/s, and tilt < 12 degrees; anything else, or touching the terrain, is a crash",
+    "Landing score = pad multiplier x (100 + remaining fuel bonus); the score carries over between levels",
+    "Level progression: after a safe landing the next level begins with new terrain, stronger wind, and slightly less starting fuel; land on 5 levels to win",
+    "3 lives; a crash costs a life and restarts the current level with the same terrain",
+    "HUD shows fuel bar, vertical/horizontal speed (green when safe, red when unsafe), altitude, the wind arrow and its strength, score, lives, and level"
+  ],
+  "controls": [
+    {
+      "key": "ArrowUp",
+      "action": "Fire main thruster (hold)"
+    },
+    {
+      "key": "ArrowLeft",
+      "action": "Rotate counter-clockwise"
+    },
+    {
+      "key": "ArrowRight",
+      "action": "Rotate clockwise"
+    },
+    {
+      "key": "KeyP",
+      "action": "Pause / resume"
+    },
+    {
+      "key": "Enter",
+      "action": "Start game / restart after win or loss"
+    }
+  ],
+  "startKey": "Enter",
+  "winCondition": "Land safely on any pad on all 5 levels.",
+  "loseCondition": "Lose all 3 lives through crashes. Running out of fuel is not an instant loss, but the lander will free-fall and likely crash.",
+  "entities": [
+    {
+      "name": "Lander",
+      "description": "A small triangular capsule with two angled legs and a flame cone that flickers while thrusting. It has position, velocity, angle, and fuel."
+    },
+    {
+      "name": "Terrain",
+      "description": "A jagged grey polyline generated per level from random midpoint displacement, with three flat segments carved out for the pads."
+    },
+    {
+      "name": "Landing Pad",
+      "description": "A flat segment with colored beacon lights and a floating label (x1/x2/x3). The width shrinks as the multiplier rises."
+    },
+    {
+      "name": "Wind",
+      "description": "An invisible horizontal force, shown by the HUD arrow and by drifting dust particles streaking across the screen."
+    },
+    {
+      "name": "Particles",
+      "description": "Thruster exhaust, drifting dust, and a crash explosion burst, all made from small circles."
+    }
+  ],
+  "artDirection": "Vector-retro look on a black starfield: a thin-lined white lander, grey terrain outline filled with dark slate, glowing colored pads, and an orange/yellow thruster flame. All art is drawn with Phaser Graphics. The camera is fixed, and the world scales to fit the viewport at a 16:9 logical resolution of 1280x720.",
+  "palette": [
+    "#05060a",
+    "#e8ecf1",
+    "#5a6270",
+    "#2a2f3a",
+    "#ff9a2e",
+    "#ffe066",
+    "#3ddc84",
+    "#4aa8ff",
+    "#ff4fd8",
+    "#ff3b3b"
+  ],
+  "audio": "WebAudio only, with the context created lazily on the first key press. Thruster: looping filtered noise whose gain follows the thrust key. Wind gust: a low whoosh made from bandpassed noise swells. Low-fuel warning beep below 20% fuel. Safe landing: a rising three-note chime. Crash: a noise burst with a falling square tone. Menu start: a blip.",
+  "difficulty": "Level 1: gravity 30 px/s², wind up to ±8 px/s², 1000 fuel units at 60/s burn. Each level adds about ±6 px/s² of maximum wind and removes 80 fuel. Gusts reach 2x the base wind for 1 second. By level 5, strong gusts make the x3 pad a real gamble.",
+  "outOfScope": [
+    "Camera zoom near the ground",
+    "Side RCS thrusters and horizontal translation",
+    "Multiple ship types",
+    "Persistent high-score table",
+    "Touch or gamepad controls",
+    "Realistic orbital mechanics",
+    "Terrain that scrolls wider than the screen"
+  ],
+  "acceptance": [
+    "On load, the menu shows the title 'Gusty Descent' and a 'Press Enter' prompt; __FORGE__.ready becomes true and state is 'menu'",
+    "Pressing Enter sets state to 'playing', level to 1, lives to 3, and score to 0",
+    "With no input, the lander falls under gravity and drifts horizontally with the wind",
+    "Holding ArrowUp shows a flame, slows the descent, and visibly drains the fuel bar",
+    "ArrowLeft and ArrowRight rotate the lander, and the thrust direction follows its angle",
+    "The HUD wind arrow changes direction or strength at least once within about 6 seconds",
+    "Three pads labeled x1, x2, and x3 are visible, and their widths decrease with the multiplier",
+    "A slow, level touchdown on a pad increases the score by the multiplier x (100 + fuel bonus) and advances the level",
+    "Hitting the terrain or landing too fast shows an explosion, reduces lives by 1, and restarts the level",
+    "After 5 safe landings, state becomes 'won'; at 0 lives, state becomes 'lost'; Enter restarts from either",
+    "KeyP toggles state between 'playing' and 'paused', and the lander freezes while paused",
+    "There are no console errors during play"
+  ]
+}
