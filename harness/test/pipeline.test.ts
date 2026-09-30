@@ -9,7 +9,8 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { runEvals } from "../src/eval.ts";
 import { withLedger } from "../src/llm.ts";
-import { create } from "../src/pipeline.ts";
+import { create, iterate } from "../src/pipeline.ts";
+import { addChange, readChanges } from "../src/template.ts";
 
 const PONG = path.resolve(import.meta.dirname, "../../games/pong");
 const CRASH = "notDefined();\n";
@@ -117,6 +118,20 @@ test("a build cut off at max_tokens is continued in the same thread", async () =
   const [, buildReq, contReq] = mock.bodies;
   assert.deepEqual(contReq.messages.map((m: any) => m.role), ["user", "assistant", "user"]);
   assert.deepEqual(contReq.messages[0], buildReq.messages[0]);
+});
+
+test("iterate records the change request, and the critic judges against it", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "forge-iter-"));
+  mock.build = mock.pong;
+  const { result } = await withLedger(() => create("pong", dir, { rounds: 1, critic: false, durationMs: 500 }));
+  mock.calls = [];
+  mock.bodies = [];
+  await withLedger(() => iterate(result.dir, "Add a second map.", { rounds: 1, critic: true, durationMs: 500 }));
+
+  assert.deepEqual(mock.calls, ["build", "critic"]); // a resumed thread's first turn, then the review
+  assert.match(JSON.stringify(mock.bodies[1].messages), /approved_changes.*Change 1:\\nAdd a second map\./);
+  await addChange(result.dir, "Make it night.");
+  assert.deepEqual(await readChanges(result.dir), ["Add a second map.", "Make it night."]);
 });
 
 test("a hostile slug from the model can't escape the output folder", async () => {
