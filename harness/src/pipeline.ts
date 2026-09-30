@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
-import { applyEdits, parseEdits, parseFiles, readSource, renderSource, writeFiles, type SourceFile } from "./files.ts";
+import { applyEdits, parseEdits, parseFiles, readSource, renderSource, writeFiles, type Edit } from "./files.ts";
 import { converse, currentUsage, effortFor, formatUsage, generateObject, pngBlock, textOf } from "./llm.ts";
 import { formatReport, playtest, type PlaytestReport } from "./playtest.ts";
 import { CRITIC_SYSTEM, DESIGN_SYSTEM, ENGINEER_SYSTEM } from "./prompts.ts";
@@ -12,6 +12,10 @@ export type RunOptions = { rounds: number; critic: boolean; durationMs: number }
 
 const specText = (spec: GameSpec) => `<design>\n${JSON.stringify(spec, null, 2)}\n</design>`;
 const text = (t: string): Anthropic.Beta.BetaTextBlockParam => ({ type: "text", text: t });
+
+const MAX_CONTINUATIONS = 2;
+const CONTINUE =
+  "Your reply hit the output limit and was cut off. Continue from where you stopped: resend in full any file that was cut off, then send the files you haven't sent yet. Don't resend files that were already complete.";
 
 export async function design(vision: string, engine?: GameSpec["engine"]): Promise<GameSpec> {
   const hint = engine ? `\n\nUse engine "${engine}".` : "";
@@ -52,23 +56,39 @@ export class Studio {
   }
 
   private async turn(label: string, content: Anthropic.Beta.BetaContentBlockParam[], effort: Parameters<typeof converse>[3]) {
+    const start = this.messages.length;
     this.messages.push({ role: "user", content: [...this.intro, ...content] });
-    let msg: Anthropic.Beta.BetaMessage;
+    const replies: string[] = [];
     try {
-      msg = await converse(label, ENGINEER_SYSTEM, this.messages, effort);
+      // A reply cut off at max_tokens is kept and continued in the same thread, so a big
+      // build isn't thrown away. Only a cut inside the text can be continued: a cut inside
+      // thinking leaves an unsigned block the API won't accept back.
+      for (let n = 0; ; n++) {
+        const msg = await converse(label, ENGINEER_SYSTEM, this.messages, effort);
+        this.messages.push({ role: "assistant", content: msg.content }); // unchanged, thinking blocks included
+        replies.push(textOf(msg));
+        if (msg.stop_reason !== "max_tokens") break;
+        if (msg.content.at(-1)?.type !== "text" || n === MAX_CONTINUATIONS) {
+          throw new Error(`${label}: output hit max_tokens; try a lower effort (FORGE_EFFORT_${label.toUpperCase()})`);
+        }
+        this.messages.push({ role: "user", content: [text(CONTINUE)] });
+      }
     } catch (e) {
-      this.messages.pop(); // unanswered; drop it so the thread stays well-formed
+      this.messages.length = start; // drop the unfinished turn so the thread stays well-formed
       throw e;
     }
     this.intro = [];
     this.note = "";
-    this.messages.push({ role: "assistant", content: msg.content }); // unchanged, thinking blocks included
-    const reply = textOf(msg);
-    let files: SourceFile[] = [];
-    try {
-      files = parseFiles(reply);
-    } catch {}
-    const edits = parseEdits(reply);
+    // Parse each reply on its own: a file cut off in one is resent whole in the next.
+    const byPath = new Map<string, string>();
+    const edits: Edit[] = [];
+    for (const r of replies) {
+      try {
+        for (const f of parseFiles(r)) byPath.set(f.path, f.content);
+      } catch {}
+      edits.push(...parseEdits(r));
+    }
+    const files = [...byPath].map(([p, c]) => ({ path: p, content: c }));
     if (!files.length && !edits.length) {
       this.note = "Your last reply contained no <file> or <edit> blocks, so nothing changed.\n\n";
       return;

@@ -81,18 +81,19 @@ function base(system: string, effort: Effort) {
   };
 }
 
-function check(msg: Anthropic.Beta.BetaMessage, label: string) {
-  if (msg.stop_reason === "refusal") {
-    throw new Error(`${label}: model declined (${msg.stop_details?.category ?? "unknown"})`);
-  }
-  if (msg.stop_reason === "max_tokens") {
-    throw new Error(`${label}: output hit max_tokens; the game is too large for one pass`);
-  }
+// Bills every response, including the ones it then rejects: a cut-off reply still costs money.
+function check(msg: Anthropic.Beta.BetaMessage, label: string, allowCutoff = false) {
   const u = msg.usage;
   const usd = record(msg);
   console.log(
-    `  [${label}] ${msg.model} in=${u.input_tokens} cache_write=${u.cache_creation_input_tokens ?? 0} cache_read=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens} ~$${usd.toFixed(3)}`,
+    `  [${label}] ${msg.model} in=${u.input_tokens} cache_write=${u.cache_creation_input_tokens ?? 0} cache_read=${u.cache_read_input_tokens ?? 0} out=${u.output_tokens} ~$${usd.toFixed(3)}${msg.stop_reason === "max_tokens" ? " (cut off at max_tokens)" : ""}`,
   );
+  if (msg.stop_reason === "refusal") {
+    throw new Error(`${label}: model declined (${msg.stop_details?.category ?? "unknown"})`);
+  }
+  if (msg.stop_reason === "max_tokens" && !allowCutoff) {
+    throw new Error(`${label}: output hit max_tokens`);
+  }
 }
 
 export const textOf = (msg: Anthropic.Beta.BetaMessage) =>
@@ -102,6 +103,7 @@ export const textOf = (msg: Anthropic.Beta.BetaMessage) =>
  * One turn of a multi-turn conversation. The caller keeps `messages` append-only and
  * pushes the returned assistant content back unchanged (thinking blocks included), so
  * automatic caching re-reads the whole prior conversation at the cache-read price.
+ * A reply cut off at max_tokens is returned, not thrown, so the caller can continue it.
  */
 export async function converse(
   label: string,
@@ -112,7 +114,7 @@ export async function converse(
   const msg = await api()
     .beta.messages.stream({ ...base(system, effort), cache_control: CACHE_1H, messages })
     .finalMessage();
-  check(msg, label);
+  check(msg, label, true);
   return msg;
 }
 
