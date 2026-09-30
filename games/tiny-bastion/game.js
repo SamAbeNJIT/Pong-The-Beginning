@@ -36,13 +36,16 @@ function upgradeCost(type, L) {
 }
 
 const ENEMIES = {
-  runner: { speed: 2.2, hp: 30, bounty: 6, armor: 0, r: 12, color: 0xffd84a, tex: 'e_runner', interval: 0.55 },
-  grunt: { speed: 1.2, hp: 60, bounty: 8, armor: 0, r: 14, color: 0xff5a5a, tex: 'e_grunt', interval: 0.8 },
-  tank: { speed: 0.7, hp: 220, bounty: 20, armor: 4, r: 20, color: 0x8fa27a, tex: 'e_tank', interval: 0.9 },
+  runner: { speed: 2.2, hp: 30, bounty: 5, armor: 0, r: 12, color: 0xffd84a, tex: 'e_runner', interval: 0.45 },
+  grunt: { speed: 1.2, hp: 60, bounty: 6, armor: 0, r: 14, color: 0xff5a5a, tex: 'e_grunt', interval: 0.8 },
+  tank: { speed: 0.7, hp: 220, bounty: 16, armor: 6, r: 20, color: 0x8fa27a, tex: 'e_tank', interval: 0.9 },
   swarm: { speed: 1.6, hp: 12, bounty: 2, armor: 0, r: 7, color: 0xff7ac8, tex: 'e_swarm', interval: 0.35 },
-  healer: { speed: 1.0, hp: 80, bounty: 15, armor: 0, r: 14, color: 0x7fbf6a, tex: 'e_healer', interval: 0.9 },
-  boss: { speed: 0.45, hp: 3000, bounty: 200, armor: 3, r: 36, color: 0x9b5cff, tex: 'e_boss', interval: 1.0 },
+  healer: { speed: 1.0, hp: 80, bounty: 12, armor: 0, r: 14, color: 0x7fbf6a, tex: 'e_healer', interval: 0.9 },
+  boss: { speed: 0.45, hp: 4200, bounty: 200, armor: 5, r: 36, color: 0x9b5cff, tex: 'e_boss', interval: 1.0 },
 };
+const HP_SCALE = 0.15;             // +15% enemy HP per wave
+const HEAL_PCT = 0.15, BOSS_HEAL_PCT = 0.03;
+const LEVEL_SCALE = [1, 1.12, 1.25]; // extra sprite scale per tower level
 
 const WAVES = [
   { label: 'BASIC', groups: [['grunt', 8]] },
@@ -206,6 +209,10 @@ class Main extends Phaser.Scene {
     this.ghostBase = this.add.image(0, 0, 'blaster_b1').setDepth(D.tower + 0.6).setAlpha(0.45).setVisible(false);
     this.ghostTurret = this.add.image(0, 0, 'blaster_t1').setDepth(D.tower + 0.7).setAlpha(0.45).setVisible(false);
     this.ghostKey = '';
+    // Range circle lives in its own Graphics and is only redrawn when it changes.
+    // (The opaque HUD/panel sit above it at D.hud, and clipCircle clips to the field.)
+    this.rangeG = this.add.graphics().setDepth(D.tower + 0.4);
+    this.rangeKey = '';
     this.partPool = this.makePool(MAX_PARTS + 20, D.fx);
     this.digitPool = this.makePool(170, D.num);
     this.projPool = this.makePool(220, D.proj);
@@ -326,6 +333,26 @@ class Main extends Phaser.Scene {
       g.fillStyle(0x6d34d0); g.fillCircle(48, 48, 29);
       g.lineStyle(3, 0xc9a0ff); g.strokeCircle(48, 48, 21);
       g.fillStyle(0xff7ac8); g.fillCircle(48, 48, 10); g.fillStyle(0xffffff, 0.8); g.fillCircle(45, 45, 3.5);
+    });
+    // icy variants of each enemy (blend toward #aee3ff so 'slowed' reads instantly)
+    for (const k of Object.values(ENEMIES)) {
+      const src = tx.get(k.tex).getSourceImage();
+      const c = tx.createCanvas(k.tex + '_ice', src.width, src.height), cc = c.context;
+      cc.drawImage(src, 0, 0);
+      cc.globalCompositeOperation = 'source-atop';
+      cc.fillStyle = 'rgba(174,227,255,0.62)'; cc.fillRect(0, 0, src.width, src.height);
+      cc.fillStyle = 'rgba(255,255,255,0.35)'; cc.fillRect(0, 0, src.width, src.height * 0.35);
+      cc.globalCompositeOperation = 'source-over';
+      c.refresh();
+    }
+    // level pips (gold diamonds)
+    for (let L = 1; L <= 3; L++) gen(`pips${L}`, 40, 12, g => {
+      const x0 = 20 - (L - 1) * 5.5;
+      for (let i = 0; i < L; i++) {
+        const x = x0 + i * 11;
+        g.fillStyle(OUT); g.fillPoints([{ x, y: 0 }, { x: x + 6, y: 6 }, { x, y: 12 }, { x: x - 6, y: 6 }], true);
+        g.fillStyle(0xffd84a); g.fillPoints([{ x, y: 2.5 }, { x: x + 3.5, y: 6 }, { x, y: 9.5 }, { x: x - 3.5, y: 6 }], true);
+      }
     });
 
     // towers
@@ -763,6 +790,7 @@ class Main extends Phaser.Scene {
     t.glow = this.add.image(x, y, 'glow').setBlendMode(ADD).setTint(d.color).setAlpha(0).setDepth(D.tower - 0.1);
     t.base = this.add.image(x, y, `${type}_b1`).setDepth(D.tower).setScale(0);
     t.turret = type !== 'frost' ? this.add.image(x, y, `${type}_t1`).setDepth(D.tower + 0.1).setScale(0).setRotation(t.angle) : null;
+    t.pips = this.add.image(x, y + 25, 'pips1').setDepth(D.tower + 0.2).setScale(0);
     this.towers.push(t);
     this.towerGrid[r][c] = t;
     this.tweens.add({ targets: t.pop, v: 1, duration: 300, ease: 'Back.out' });
@@ -786,6 +814,7 @@ class Main extends Phaser.Scene {
     t.stats = towerStats(t.type, t.level);
     t.base.setTexture(`${t.type}_b${t.level}`);
     if (t.turret) t.turret.setTexture(`${t.type}_t${t.level}`);
+    t.pips.setTexture(`pips${t.level}`);
     t.base.setTintFill(0xffffff); t.flashT = 0.12;
     t.shadow.setScale(0.75 + 0.1 * (t.level - 1), 0.8 + 0.1 * (t.level - 1));
     this.tweens.killTweensOf(t.pop);
@@ -811,7 +840,7 @@ class Main extends Phaser.Scene {
     this.towerGrid[t.r][t.c] = null;
     const i = this.towers.indexOf(t); if (i >= 0) this.towers.splice(i, 1);
     this.tweens.killTweensOf(t.pop);
-    const objs = [t.base, t.turret, t.glow, t.shadow].filter(Boolean);
+    const objs = [t.base, t.turret, t.glow, t.shadow, t.pips].filter(Boolean);
     this.tweens.add({ targets: objs, scale: 0, alpha: 0, duration: 240, ease: 'Back.in', onComplete: () => objs.forEach(o => o.destroy()) });
     this.floatText(t.x, t.y - 24, `+${refund}g`, '#ffd84a', 22);
     for (let k = 0; k < 3; k++) this.fx('coin', t.x + rand(-10, 10), t.y + rand(-10, 10), { home: { x: 24, y: 26 }, life: 0.55 + k * 0.08, s0: 0.9, s1: 0.7, depth: D.banner });
@@ -853,9 +882,9 @@ class Main extends Phaser.Scene {
 
   // ---------------------------------------------------------------- enemies
   spawnEnemy(type, wave) {
-    const d = ENEMIES[type], hp = d.hp * (1 + 0.08 * (wave - 1));
+    const d = ENEMIES[type], hp = d.hp * (1 + HP_SCALE * (wave - 1));
     const e = {
-      type, wave, hp, maxHp: hp, armor: d.armor, speed: d.speed, r: d.r, bounty: d.bounty, color: d.color,
+      type, wave, hp, maxHp: hp, armor: d.armor, speed: d.speed, r: d.r, bounty: d.bounty, color: d.color, tex: d.tex,
       dist: 0, x: 0, y: 0, off: type === 'swarm' ? rand(-13, 13) : type === 'boss' ? 0 : rand(-5, 5),
       slowAmt: 0, slowT: 0, flash: 0, tm: 0, healT: 1 + Math.random(), iceT: Math.random() * 0.3, dead: false,
     };
@@ -896,7 +925,7 @@ class Main extends Phaser.Scene {
     e.hp -= dmg;
     e.flash = 0.06;
     Sfx.hit();
-    if (!noNum) this.spawnNumber(e.x, e.y - e.r - 6, dmg, tint, e.type === 'boss' ? 1.15 : 1);
+    if (!noNum) this.spawnNumber(e.x, e.y - e.r - 26, dmg, tint, e.type === 'boss' ? 1.15 : 1);
     if (e.type === 'boss' && dmg >= 30 && this.bossShakeT <= 0) { this.cameras.main.shake(120, 0.005); this.bossShakeT = 0.35; }
     if (e.hp <= 0) this.kill(e);
     return dmg;
@@ -964,8 +993,9 @@ class Main extends Phaser.Scene {
       const mode = e.flash > 0 ? 2 : e.slowAmt > 0 ? 1 : 0;
       if (mode !== e.tm) {
         e.tm = mode;
+        const want = e.slowAmt > 0 ? e.tex + '_ice' : e.tex;
+        if (e.spr.texture.key !== want) e.spr.setTexture(want);
         if (mode === 2) e.spr.setTintFill(0xffffff);
-        else if (mode === 1) e.spr.setTint(0x6ab8ff);
         else e.spr.clearTint();
       }
       if (e.slowAmt > 0) {
@@ -985,16 +1015,21 @@ class Main extends Phaser.Scene {
   healPulse(h) {
     const R = 1.5 * T, R2 = R * R;
     this.fx('ring', h.x, h.y, { tint: 0x7fdc6a, s0: 0.3, s1: R / 63, life: 0.5, a: 0.8, depth: D.ground });
-    let any = false;
+    let any = false, healed = 0;
     for (const e of this.enemies) {
       if (e === h || e.dead || e.hp >= e.maxHp) continue;
       const dx = e.x - h.x, dy = e.y - h.y;
       if (dx * dx + dy * dy > R2) continue;
-      e.hp = Math.min(e.maxHp, e.hp + e.maxHp * (e.type === 'boss' ? 0.04 : 0.12));
+      const before = e.hp;
+      e.hp = Math.min(e.maxHp, e.hp + e.maxHp * (e.type === 'boss' ? BOSS_HEAL_PCT : HEAL_PCT));
+      healed += e.hp - before;
       any = true;
       this.fx('plus', e.x, e.y - e.r, { tint: 0x7dff8e, vy: -45, life: 0.65, s0: 1.1, s1: 0.6 });
     }
-    if (any) Sfx.heal();
+    if (any) {
+      Sfx.heal();
+      if (healed >= 1) this.spawnNumber(h.x, h.y - h.r - 26, healed, 0x7dff8e, 1, '+');
+    }
   }
 
   // ---------------------------------------------------------------- towers
@@ -1046,14 +1081,15 @@ class Main extends Phaser.Scene {
       }
       if (t.cd < 0) t.cd = 0;
       // visuals
-      const v = t.pop.v;
-      t.base.setScale(v * (1 + t.pulse * 0.18));
+      const v = t.pop.v, ls = v * LEVEL_SCALE[t.level - 1];
+      t.base.setScale(ls * (1 + t.pulse * 0.18));
+      t.pips.setScale(v);
       if (t.turret) {
         const rc = t.recoil * 4;
-        t.turret.setPosition(t.x - Math.cos(t.angle) * rc, t.y - Math.sin(t.angle) * rc).setRotation(t.angle).setScale(v);
+        t.turret.setPosition(t.x - Math.cos(t.angle) * rc, t.y - Math.sin(t.angle) * rc).setRotation(t.angle).setScale(ls);
       }
-      if (t.level === 3 || t.type === 'frost') {
-        const ga = (t.level === 3 ? 0.35 : 0.12) + 0.1 * Math.sin(this.simT * 3 + t.c) + t.pulse * 0.3;
+      if (t.level >= 2 || t.type === 'frost') {
+        const ga = (t.level === 3 ? 0.4 : t.level === 2 ? 0.2 : 0.12) + 0.1 * Math.sin(this.simT * 3 + t.c) + t.pulse * 0.3;
         t.glow.setAlpha(ga).setScale(v * (0.7 + 0.1 * t.level));
       }
     }
@@ -1104,7 +1140,7 @@ class Main extends Phaser.Scene {
       total += this.dealDamage(e, st.dmg, 0xaee3ff, true);
     }
     // merged number shown over the enemies that were hit
-    if (total > 0 && n > 0) this.spawnNumber(sx / n, sy / n - 10, total, 0xaee3ff, 1.1);
+    if (total > 0 && n > 0) this.spawnNumber(sx / n, sy / n - 26, total, 0xaee3ff, 1.1);
     this.fx('ring', t.x, t.y, { tint: 0xaee3ff, s0: 0.2, s1: R / 63, life: 0.45, a: 0.6, depth: D.ground });
     this.fx('glow', t.x, t.y, { tint: 0xaee3ff, add: true, s0: 0.6, s1: 1.2, life: 0.3, a: 0.5, depth: D.ground });
     t.pulse = 1;
@@ -1224,8 +1260,8 @@ class Main extends Phaser.Scene {
     arr.length = j;
   }
 
-  spawnNumber(x, y, val, tint, scale = 1) {
-    const s = String(Math.max(1, Math.round(val)));
+  spawnNumber(x, y, val, tint, scale = 1, prefix = '') {
+    const s = prefix + String(Math.max(1, Math.round(val)));
     if (this.nums.length >= MAX_NUMS) this.freeNum(this.nums.shift());
     const imgs = [];
     for (const ch of s) {
@@ -1236,7 +1272,7 @@ class Main extends Phaser.Scene {
       imgs.push(im);
     }
     if (!imgs.length) return;
-    const n = { imgs, x: x + rand(-6, 6), y, vy: -75, life: 0.75, max: 0.75, sc: scale };
+    const n = { imgs, x: x + rand(-12, 12), y: y + rand(-4, 2), vy: -75, life: 0.75, max: 0.75, sc: scale };
     this.nums.push(n);
     this.layoutNum(n, scale * 1.5, 1);
   }
@@ -1279,6 +1315,7 @@ class Main extends Phaser.Scene {
     g.clear();
     if (this.state !== 'playing') {
       this.ghostBase.setVisible(false); this.ghostTurret.setVisible(false);
+      if (this.rangeKey !== '') { this.rangeKey = ''; this.rangeG.clear(); }
       return;
     }
     const tx = this.cx * T + T / 2, ty = TOP + this.cy * T + T / 2;
@@ -1299,8 +1336,14 @@ class Main extends Phaser.Scene {
       color = (!onPath && afford) ? 0x7dff8e : 0xff5a5a;
       range = d.range; minR = d.minRange || 0;
     }
-    this.clipCircle(g, x, y, range * T, color, 0.06, 0.5, 2);
-    if (minR) this.clipCircle(g, x, y, minR * T, color, 0, 0.35, 1.5);
+    const rk = `${Math.round(x)},${Math.round(y)},${range},${minR},${color}`;
+    if (rk !== this.rangeKey) {
+      this.rangeKey = rk;
+      const rg = this.rangeG;
+      rg.clear();
+      this.clipCircle(rg, x, y, range * T, color, 0.06, 0.5, 2);
+      if (minR) this.clipCircle(rg, x, y, minR * T, color, 0, 0.35, 1.5);
+    }
     g.fillStyle(color, 0.14); g.fillRect(x - T / 2 + 3, y - T / 2 + 3, T - 6, T - 6);
     const pulse = (Math.sin(this.animT * 6) + 1) * 0.5;
     const s = T / 2 - 5 + pulse * 3, L = 13;
@@ -1337,15 +1380,23 @@ class Main extends Phaser.Scene {
     }
     if (fillA > 0) { g.fillStyle(color, fillA); g.fillPoints(cp, true); }
     g.lineStyle(lw, color, strokeA);
-    for (let i = 0; i < N; i++) {
-      const a = cp[i], b = cp[(i + 1) % N];
-      if (a.inside && b.inside) g.lineBetween(a.x, a.y, b.x, b.y);
+    g.beginPath();
+    let pen = false;
+    for (let i = 0; i <= N; i++) {
+      const a = cp[i % N];
+      if (!a.inside) { pen = false; continue; }
+      if (pen) g.lineTo(a.x, a.y); else { g.moveTo(a.x, a.y); pen = true; }
     }
+    g.strokePath();
   }
 
   drawHpBars() {
     const g = this.hpG;
     g.clear();
+    g.lineStyle(2, 0xaee3ff, 0.85);
+    for (const e of this.enemies) {
+      if (!e.dead && e.slowAmt > 0) g.strokeCircle(e.x, e.y, e.r + 3);
+    }
     for (const e of this.enemies) {
       if (e.dead || e.type === 'boss' || e.hp >= e.maxHp) continue;
       const r = Math.max(0, e.hp / e.maxHp), w = Math.max(18, e.r * 2), bx = e.x - w / 2, by = e.y - e.r - 9;
@@ -1455,7 +1506,7 @@ class Main extends Phaser.Scene {
       let g0 = this.gold; this.tryUpgrade();
       chk('upgrade to L2 (38g, bigger art)', tw.level === 2 && this.gold === g0 - 38 && tw.base.texture.key === 'blaster_b2' && tw.turret.texture.key === 'blaster_t2');
       g0 = this.gold; this.tryUpgrade();
-      chk('upgrade to L3 (63g, triple barrel art)', tw.level === 3 && this.gold === g0 - 63 && tw.base.texture.key === 'blaster_b3' && tw.turret.texture.key === 'blaster_t3');
+      chk('upgrade to L3 (63g, triple barrel art, 3 pips)', tw.level === 3 && this.gold === g0 - 63 && tw.base.texture.key === 'blaster_b3' && tw.turret.texture.key === 'blaster_t3' && tw.pips.texture.key === 'pips3');
       g0 = this.gold; this.tryUpgrade();
       chk('third upgrade does nothing', tw.level === 3 && this.gold === g0);
       g0 = this.gold; const spent = tw.spent; this.trySell();
@@ -1476,7 +1527,7 @@ class Main extends Phaser.Scene {
 
       let slowSeen = false, bonusChecked = false, guard = 0;
       const watch = () => {
-        if (!slowSeen) for (const e of this.enemies) if (!e.dead && e.slowAmt > 0 && e.tm === 1) { slowSeen = true; break; }
+        if (!slowSeen) for (const e of this.enemies) if (!e.dead && e.slowAmt > 0 && e.tm === 1 && e.spr.texture.key === e.tex + '_ice') { slowSeen = true; break; }
         return false;
       };
       while (this.state === 'playing' && this.wave < TOTAL_WAVES && guard++ < 30) {
