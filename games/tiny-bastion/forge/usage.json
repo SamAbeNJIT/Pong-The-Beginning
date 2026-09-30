@@ -1,8 +1,8 @@
 {
-  "calls": 3,
-  "input": 7690,
-  "cacheWrite": 62709,
-  "cacheRead": 48923,
-  "output": 19890,
-  "usd": 0.9400166000000001
+  "calls": 2,
+  "input": 7686,
+  "cacheWrite": 47358,
+  "cacheRead": 1591,
+  "output": 14977,
+  "usd": 0.7094662
 }

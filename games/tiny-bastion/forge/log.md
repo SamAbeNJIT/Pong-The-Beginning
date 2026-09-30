@@ -1,8 +1,8 @@
 # Forge log
 
-Result: SHIPPED after 2 round(s)
+Result: SHIPPED after 1 round(s)
 
-Cost so far: 3 calls, in 7690 + cache write 62709 + cache read 48923, out 19890 tokens, ~$0.94 (estimated from list prices)
+Cost so far: 2 calls, in 7686 + cache write 47358 + cache read 1591, out 14977 tokens, ~$0.71 (estimated from list prices)
 
 ## Round 1
 
@@ -10,31 +10,17 @@ Cost so far: 3 calls, in 7690 + cache write 62709 + cache read 48923, out 19890 
 PASS  contract: __FORGE__.ready — ready
 PASS  boots into menu — state=menu
 PASS  startKey enters playing — after Enter: state=playing
-FAIL  frame rate — 19 fps (headless, software GL)
-PASS  renders a scene — distinct colors: menu=147 play=257
-PASS  screen changes during play — 8.52% of sampled pixels changed
-PASS  state stays valid — restarts after win/lose: 0
-PASS  no runtime errors — clean console
-=> playtest FAILED
-```
-
-## Round 2
-
-```
-PASS  contract: __FORGE__.ready — ready
-PASS  boots into menu — state=menu
-PASS  startKey enters playing — after Enter: state=playing
-PASS  frame rate — 25 fps (headless, software GL)
-PASS  renders a scene — distinct colors: menu=142 play=250
-PASS  screen changes during play — 9.85% of sampled pixels changed
+PASS  frame rate — 28 fps (headless, software GL)
+PASS  renders a scene — distinct colors: menu=143 play=263
+PASS  screen changes during play — 10.19% of sampled pixels changed
 PASS  state stays valid — restarts after win/lose: 0
 PASS  no runtime errors — clean console
 => playtest passed
 ```
 
-Critic: **ship** — A polished, readable build that matches the design. The menu shows the title and 'Press Enter to start'. Enter moves the game into 'playing' with 150 gold, 20 lives, wave 1/10 and score 0. The winding sandy path has rounded corners and inner shadow, the spawn and exit gates glow, and the tiles have alternating shading. The HUD has coin and heart icons, and the bottom panel lists tower costs with their keys and a next-wave preview, which updated correctly to 'WAVE 2 MIXED x10 grunts x4 runners'. During play the build cursor tints red on an unaffordable tile and shows a Frost ghost and range circle. A Frost tower was placed and upgraded to level 2: gold went 150 → 80 → 27, which matches the 75% upgrade cost, and it shows extra spikes. Its hit shows '5' damage, consistent with the +60% bonus on 3 base damage. Enemies near it look slowed with a blue tint, and pause toggled correctly. The console is clean. No acceptance criterion is visibly broken, though the 8-second test only reached wave 1.
+Critic: **ship** — The core loop works on screen. Tiny Bastion boots into a clean menu with the title and 'Press Enter to start', and Enter starts play with 150 gold, 20 lives, Wave 1/10 and score 0. The cursor tints red and green correctly and shows the correct 2.2-tile range circle for a Frost ghost. A Frost tower was placed and upgraded: 150 − 70 − 53 = 27 gold, which matches the 75% level-2 cost. It pulses and deals the expected 5 damage (3 × 1.6). Slowed grunts show a blue tint. The next-wave preview updates to Wave 2 (x10 grunts, x4 runners, MIXED) while wave 1 spawns. Pause toggled correctly in the telemetry, and the console stayed clean. The art matches the direction: a flat vector look, a sandy path with rounded corners, glowing spawn and exit gates, and bold stroked text. The short playtest never reached kills, upgrades to level 3, selling, later waves or the boss, so those criteria are unverified rather than broken. Only minor polish issues are visible.
 
-- [minor] Coverage gap: telemetry covers only the first ~8s of wave 1. The boss HP bar and screen shake, the win and lose transitions, restart from won/lost, and early-send bonus gold with floating text are unverified. A longer scripted run should confirm these before release.
-- [minor] Score stayed at 0 for the whole sample even while an upgraded Frost tower was hitting grunts. This is probably just because no kill happened yet, but check that kills increment __FORGE__.score and spawn coin particles toward the gold HUD.
-- [minor] The 'No tower here' feedback floats above the cursor in red, on top of a red range circle, and is hard to read against it. Consider adding a dark stroke or background, as the art direction specifies for text.
-- [minor] On the menu, the HUD and bottom panel stay visible, dimmed, behind the title overlay. This is acceptable, but a slightly stronger dim or hiding the gameplay HUD would make the menu look more intentional.
+- [minor] The menu help text says 'Space: send wave early (+gold, but tougher)'. The design gives only bonus gold (whole seconds remaining × 2) with no difficulty increase. Either remove 'but tougher' or confirm no hidden scaling is applied.
+- [minor] The 'BUILD YOUR DEFENSES' / 'Press Space to start Wave 1 now' banner sits in the middle of the playfield. It covers the build cursor, the range circle and path tiles at the moment the player first needs to see them. Move it higher or lower, or fade it out on the first cursor move or build.
+- [minor] The 'No tower here' toast appears directly over path tiles near the cursor, where it can hide enemies. Place it above the cursor so it does not overlap the path, or keep it short and translucent.
+- [minor] Wave 1 auto-starts from a 20s countdown. The design specifies a 12s countdown between waves and does not specify an auto-timer before wave 1. This is acceptable, but confirm that the inter-wave countdowns are 12s and that Space bonus gold uses them.

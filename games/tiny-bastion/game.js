@@ -43,17 +43,21 @@ const ENEMIES = {
   healer: { speed: 1.0, hp: 80, bounty: 12, armor: 0, r: 14, color: 0x7fbf6a, tex: 'e_healer', interval: 0.9 },
   boss: { speed: 0.45, hp: 4200, bounty: 200, armor: 5, r: 36, color: 0x9b5cff, tex: 'e_boss', interval: 1.0 },
 };
-const HP_SCALE = 0.15;             // +15% enemy HP per wave
+// Enemy HP multiplier per wave: front-loaded so waves 3-6 demand real damage, late waves unchanged.
+const HP_MULT = [1.00, 1.10, 1.28, 1.48, 1.66, 1.80, 1.90, 2.05, 2.20, 2.35];
+// Rushing: sending a wave early pays a small bonus but makes that wave tougher and packed tighter.
+const EARLY_GOLD_PER_SEC = 1, RUSH_HP = 0.30, RUSH_PACK = 0.40;
+const rushHeat = (secs) => clamp(secs / WAVE_COUNTDOWN, 0, 1);
 const HEAL_PCT = 0.15, BOSS_HEAL_PCT = 0.03;
 const LEVEL_SCALE = [1, 1.12, 1.25]; // extra sprite scale per tower level
 
 const WAVES = [
   { label: 'BASIC', groups: [['grunt', 8]] },
   { label: 'MIXED', groups: [['grunt', 6], ['runner', 4], ['grunt', 4]] },
-  { label: 'FAST', groups: [['runner', 12]] },
-  { label: 'SWARM', groups: [['grunt', 2], ['swarm', 20], ['grunt', 2]] },
-  { label: 'ARMORED', groups: [['grunt', 3], ['tank', 3], ['grunt', 3]] },
-  { label: 'HEALERS', groups: [['runner', 3], ['grunt', 4], ['healer', 1], ['grunt', 4], ['healer', 1], ['runner', 3]] },
+  { label: 'FAST', groups: [['runner', 16]] },
+  { label: 'SWARM', groups: [['grunt', 4], ['swarm', 24], ['grunt', 4]] },
+  { label: 'ARMORED', groups: [['grunt', 4], ['tank', 4], ['grunt', 4]] },
+  { label: 'HEALERS', groups: [['runner', 4], ['grunt', 5], ['healer', 1], ['grunt', 5], ['healer', 1], ['runner', 4], ['tank', 1]] },
   { label: 'SWARM x2', groups: [['swarm', 16], ['healer', 2], ['swarm', 16]] },
   { label: 'ARMORED', groups: [['runner', 4], ['tank', 2], ['healer', 1], ['tank', 3], ['healer', 1], ['runner', 4]] },
   { label: 'MIXED', groups: [['runner', 5], ['tank', 2], ['healer', 1], ['swarm', 20], ['tank', 2], ['healer', 2], ['runner', 5]] },
@@ -61,12 +65,12 @@ const WAVES = [
 ];
 const LABEL_COLORS = { BASIC: '#e6eef8', MIXED: '#4ee6ff', FAST: '#ffd84a', SWARM: '#ff7ac8', 'SWARM x2': '#ff7ac8', ARMORED: '#b8c8a0', HEALERS: '#7fdc6a', BOSS: '#c9a0ff' };
 
-function buildQueue(waveNum) {
+function buildQueue(waveNum, pace = 1) {
   const q = [];
   let t = 0.3;
   for (const [type, count] of WAVES[waveNum - 1].groups) {
-    for (let i = 0; i < count; i++) { q.push({ t, type }); t += ENEMIES[type].interval; }
-    t += 0.8;
+    for (let i = 0; i < count; i++) { q.push({ t, type }); t += ENEMIES[type].interval * pace; }
+    t += 0.8 * pace;
   }
   return q;
 }
@@ -256,7 +260,7 @@ class Main extends Phaser.Scene {
     this.gold = 150; this.lives = 20; this.score = 0; this.wave = 0;
     this.spawning = false; this.spawnQueue = []; this.spawnClock = 0;
     this.countdown = FIRST_COUNTDOWN; this.countdownActive = true;
-    this.waveAlive = []; this.waveSpawnDone = []; this.waveCleared = [];
+    this.waveAlive = []; this.waveSpawnDone = []; this.waveCleared = []; this.rushHp = [];
     this.enemies = []; this.towers = []; this.bolts = []; this.shells = []; this.parts = []; this.nums = [];
     this.towerGrid = [];
     for (let r = 0; r < ROWS; r++) this.towerGrid.push(new Array(COLS).fill(null));
@@ -611,7 +615,7 @@ class Main extends Phaser.Scene {
     this.menuPrompt = this.txt(W / 2, 370, 'Press Enter to start', 34, '#ffd84a').setOrigin(0.5);
     const mc = this.txt(W / 2, 480,
       'Arrows: move cursor    1 / 2 / 3: build Blaster / Mortar / Frost\n' +
-      'U: upgrade    S: sell (60% refund)    Space: send wave early (+bonus)\n' +
+      'U: upgrade    S: sell (60% refund)    Space: send wave early (+gold, but tougher)\n' +
       'P: pause    Mouse click: place last selected tower',
       17, '#aee3ff', { align: 'center', lineSpacing: 10 }).setOrigin(0.5);
     this.menuO.add([this.add.rectangle(0, 0, W, H, 0x0d1118, 0.78).setOrigin(0), mt, ms, this.menuPrompt, mc]);
@@ -637,16 +641,22 @@ class Main extends Phaser.Scene {
     this.floats = [];
     for (let i = 0; i < 10; i++) {
       const t = this.txt(0, 0, '', 20, '#ffffff').setOrigin(0.5).setDepth(D.banner + 1).setVisible(false);
-      this.floats.push({ t, life: 0, max: 1, x: 0, y: 0, color: '#ffffff', size: 20 });
+      this.floats.push({ t, life: 0, max: 1, x: 0, y: 0, color: '#ffffff', size: 20, boxed: false });
     }
   }
-  floatText(x, y, str, color, size = 20) {
+  floatText(x, y, str, color, size = 20, boxed = false) {
     let f = this.floats.find(o => o.life <= 0);
     if (!f) f = this.floats.reduce((a, b) => (a.life < b.life ? a : b));
     x = clamp(x, 70, W - 70);
     f.t.setText(str);
     if (f.color !== color) { f.t.setColor(color); f.color = color; }
     if (f.size !== size) { f.t.setFontSize(size); f.size = size; }
+    if (f.boxed !== boxed) {
+      f.boxed = boxed;
+      f.t.setBackgroundColor(boxed ? 'rgba(13,17,24,0.9)' : null);
+      f.t.setPadding(boxed ? 8 : 0, boxed ? 4 : 0);
+      f.t.setStroke('#0d1118', boxed ? 5 : Math.max(3, Math.round(size / 6)));
+    }
     f.t.setPosition(x, y).setVisible(true).setAlpha(1).setScale(1);
     f.x = x; f.y = y; f.life = f.max = 1.2;
   }
@@ -768,7 +778,7 @@ class Main extends Phaser.Scene {
     this.cursorShake = 0.25;
     if (msg) {
       const ty = this.cy === 0 ? TOP + T + 16 : TOP + this.cy * T - 14;
-      this.floatText(this.cx * T + T / 2, ty, msg, '#ff7a7a', 17);
+      this.floatText(this.cx * T + T / 2, ty, msg, '#ff9a9a', 17, true);
     }
   }
   addGold(n) { this.gold += n; }
@@ -851,8 +861,10 @@ class Main extends Phaser.Scene {
   startNextWave(early) {
     if (this.spawning || this.wave >= TOTAL_WAVES) return false;
     // Early-send bonus only applies to the between-wave countdowns (not before wave 1).
+    let heat = 0;
     if (early && this.countdownActive && this.wave >= 1) {
-      const bonus = Math.floor(Math.max(0, this.countdown)) * 2;
+      heat = rushHeat(this.countdown);
+      const bonus = Math.floor(Math.max(0, this.countdown)) * EARLY_GOLD_PER_SEC;
       if (bonus > 0) {
         this.addGold(bonus);
         this.floatText(W - 170, TOP + 26, `+${bonus}g early bonus!`, '#ffd84a', 22);
@@ -863,10 +875,12 @@ class Main extends Phaser.Scene {
     this.countdownActive = false;
     this.spawning = true;
     this.spawnClock = 0;
-    this.spawnQueue = buildQueue(this.wave);
+    this.rushHp[this.wave] = 1 + RUSH_HP * heat;
+    this.spawnQueue = buildQueue(this.wave, 1 - RUSH_PACK * heat);
     this.waveAlive[this.wave] = this.waveAlive[this.wave] || 0;
     const wd = WAVES[this.wave - 1];
-    this.showBanner(`WAVE ${this.wave}`, wd.label, LABEL_COLORS[wd.label] || '#ffffff');
+    if (heat > 0.05) this.showBanner(`WAVE ${this.wave} RUSHED`, `${wd.label}  ·  +${Math.round(RUSH_HP * heat * 100)}% HP, packed tight`, '#ff9a3c');
+    else this.showBanner(`WAVE ${this.wave}`, wd.label, LABEL_COLORS[wd.label] || '#ffffff');
     Sfx.waveStart();
     return true;
   }
@@ -882,7 +896,7 @@ class Main extends Phaser.Scene {
 
   // ---------------------------------------------------------------- enemies
   spawnEnemy(type, wave) {
-    const d = ENEMIES[type], hp = d.hp * (1 + HP_SCALE * (wave - 1));
+    const d = ENEMIES[type], hp = d.hp * HP_MULT[wave - 1] * (this.rushHp[wave] || 1);
     const e = {
       type, wave, hp, maxHp: hp, armor: d.armor, speed: d.speed, r: d.r, bounty: d.bounty, color: d.color, tex: d.tex,
       dist: 0, x: 0, y: 0, off: type === 'swarm' ? rand(-13, 13) : type === 'boss' ? 0 : rand(-5, 5),
@@ -1417,7 +1431,7 @@ class Main extends Phaser.Scene {
         const secs = Math.max(0, this.countdown);
         status = this.wave === 0
           ? `Wave 1 in ${Math.ceil(secs)}s  ·  Space: start now`
-          : `Wave ${this.wave + 1} in ${Math.ceil(secs)}s  ·  Space: send early +${Math.floor(secs) * 2}g`;
+          : `Wave ${this.wave + 1} in ${Math.ceil(secs)}s  ·  Space: +${Math.floor(secs) * EARLY_GOLD_PER_SEC}g, foes +${Math.round(RUSH_HP * rushHeat(secs) * 100)}% HP`;
       } else if (this.wave >= TOTAL_WAVES) status = 'FINAL WAVE: hold the line!';
     }
     this.statusText.setText(status);
@@ -1533,12 +1547,13 @@ class Main extends Phaser.Scene {
       while (this.state === 'playing' && this.wave < TOTAL_WAVES && guard++ < 30) {
         step(300, () => { watch(); return this.countdownActive; });
         if (this.state !== 'playing' || !this.countdownActive) break;
-        step(2, watch);
+        step(9, watch);
         const cdn = this.countdown, g1 = this.gold;
         this.startNextWave(true);
         if (!bonusChecked) {
           bonusChecked = true;
-          chk('early send awards whole seconds x2', this.gold === g1 + Math.floor(cdn) * 2, `${Math.floor(cdn)}s -> +${this.gold - g1}g`);
+          chk('early send awards whole seconds x1', this.gold === g1 + Math.floor(cdn) * EARLY_GOLD_PER_SEC, `${Math.floor(cdn)}s -> +${this.gold - g1}g`);
+          chk('rushed wave gets tougher', this.rushHp[this.wave] > 1, `hp x${(this.rushHp[this.wave] || 1).toFixed(2)}`);
         }
       }
       step(900, watch);
