@@ -11,6 +11,10 @@ const MAX_PARTS = 300, MAX_NUMS = 40;
 const FIRST_COUNTDOWN = 20, WAVE_COUNTDOWN = 12, TOTAL_WAVES = 10;
 const ADD = Phaser.BlendModes.ADD;
 
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const rand = (a, b) => a + Math.random() * (b - a);
+const fmt = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
+
 const TOWERS = {
   blaster: { name: 'Blaster', key: '1', cost: 50, color: 0x4ee6ff, range: 2.5, dmg: 8, cd: 0.3, desc: 'Rapid single-target' },
   mortar: { name: 'Mortar', key: '2', cost: 80, color: 0xff9a3c, range: 3.5, dmg: 25, cd: 1.6, minRange: 1, desc: 'Splash, min range 1' },
@@ -51,7 +55,8 @@ const rushHeat = (secs) => clamp(secs / WAVE_COUNTDOWN, 0, 1);
 const HEAL_PCT = 0.15, BOSS_HEAL_PCT = 0.03;
 const LEVEL_SCALE = [1, 1.12, 1.25]; // extra sprite scale per tower level
 
-const WAVES = [
+// ----- Waves per map -----
+const WAVES_1 = [
   { label: 'BASIC', groups: [['grunt', 8]] },
   { label: 'MIXED', groups: [['grunt', 6], ['runner', 4], ['grunt', 4]] },
   { label: 'FAST', groups: [['runner', 16]] },
@@ -63,49 +68,212 @@ const WAVES = [
   { label: 'MIXED', groups: [['runner', 5], ['tank', 2], ['healer', 1], ['swarm', 20], ['tank', 2], ['healer', 2], ['runner', 5]] },
   { label: 'BOSS', groups: [['healer', 1], ['swarm', 6], ['tank', 1], ['healer', 1], ['boss', 1], ['tank', 1], ['swarm', 6]] },
 ];
+const WAVES_2 = [
+  { label: 'MIXED', groups: [['grunt', 6], ['runner', 4], ['grunt', 4]] },
+  { label: 'FAST', groups: [['runner', 10], ['grunt', 6], ['runner', 6]] },
+  { label: 'SWARM', groups: [['grunt', 3], ['swarm', 22], ['grunt', 3]] },
+  { label: 'ARMORED', groups: [['grunt', 4], ['tank', 3], ['grunt', 4]] },
+  { label: 'HEALERS', groups: [['runner', 4], ['grunt', 6], ['healer', 2], ['runner', 4], ['tank', 1]] },
+  { label: 'SWARM x2', groups: [['swarm', 18], ['healer', 2], ['swarm', 18]] },
+  { label: 'ARMORED', groups: [['tank', 3], ['healer', 1], ['tank', 3], ['runner', 8]] },
+  { label: 'MIXED', groups: [['runner', 6], ['tank', 3], ['healer', 2], ['swarm', 20], ['tank', 2]] },
+  { label: 'MIXED', groups: [['runner', 6], ['tank', 3], ['healer', 2], ['swarm', 24], ['tank', 2], ['healer', 1], ['runner', 6]] },
+  { label: 'BOSS', groups: [['healer', 1], ['swarm', 8], ['tank', 2], ['healer', 1], ['boss', 1], ['tank', 1], ['swarm', 8]] },
+];
+const WAVES_3 = [
+  { label: 'MIXED', groups: [['grunt', 6], ['runner', 6], ['grunt', 4]] },
+  { label: 'FAST', groups: [['runner', 18]] },
+  { label: 'SWARM', groups: [['grunt', 4], ['swarm', 28], ['grunt', 4]] },
+  { label: 'ARMORED', groups: [['grunt', 6], ['tank', 4], ['grunt', 2]] },
+  { label: 'HEALERS', groups: [['runner', 6], ['grunt', 6], ['healer', 2], ['tank', 2]] },
+  { label: 'SWARM x2', groups: [['swarm', 20], ['healer', 2], ['swarm', 20]] },
+  { label: 'ARMORED', groups: [['tank', 3], ['healer', 2], ['tank', 3], ['runner', 10]] },
+  { label: 'MIXED', groups: [['runner', 8], ['tank', 3], ['healer', 2], ['swarm', 24], ['tank', 3]] },
+  { label: 'MIXED', groups: [['tank', 4], ['healer', 3], ['swarm', 24], ['runner', 12], ['tank', 2]] },
+  { label: 'BOSS', groups: [['healer', 2], ['swarm', 10], ['tank', 2], ['boss', 1], ['tank', 2], ['healer', 1], ['swarm', 10]] },
+];
+const WAVES_4 = [
+  { label: 'MIXED', groups: [['grunt', 14], ['runner', 6]] },
+  { label: 'FAST', groups: [['runner', 20], ['grunt', 6]] },
+  { label: 'SWARM', groups: [['grunt', 4], ['swarm', 32], ['grunt', 4]] },
+  { label: 'ARMORED', groups: [['grunt', 8], ['tank', 5]] },
+  { label: 'HEALERS', groups: [['runner', 8], ['grunt', 8], ['healer', 2], ['tank', 3]] },
+  { label: 'SWARM x2', groups: [['swarm', 24], ['healer', 4], ['swarm', 24]] },
+  { label: 'ARMORED', groups: [['tank', 4], ['healer', 2], ['tank', 4], ['runner', 12]] },
+  { label: 'MIXED', groups: [['runner', 12], ['tank', 4], ['healer', 2], ['swarm', 28], ['tank', 4]] },
+  { label: 'MIXED', groups: [['tank', 6], ['healer', 4], ['swarm', 30], ['runner', 14], ['tank', 2]] },
+  { label: 'BOSS', groups: [['healer', 2], ['swarm', 12], ['tank', 4], ['boss', 1], ['tank', 2], ['healer', 2], ['swarm', 12]] },
+];
 const LABEL_COLORS = { BASIC: '#e6eef8', MIXED: '#4ee6ff', FAST: '#ffd84a', SWARM: '#ff7ac8', 'SWARM x2': '#ff7ac8', ARMORED: '#b8c8a0', HEALERS: '#7fdc6a', BOSS: '#c9a0ff' };
 
-function buildQueue(waveNum, pace = 1) {
-  const q = [];
-  let t = 0.3;
-  for (const [type, count] of WAVES[waveNum - 1].groups) {
-    for (let i = 0; i < count; i++) { q.push({ t, type }); t += ENEMIES[type].interval * pace; }
-    t += 0.8 * pace;
-  }
-  return q;
-}
+// ----- Maps -----
+// Each lane is a list of waypoint tiles: starts off-grid at col -1, ends off-grid at col 16.
+const MAP_DEFS = [
+  {
+    name: 'Meadow Run', tag: 'Classic winding path', gold: 150, hpScale: 1, bossMult: 1, bossArmor: 5, boss: 'THE WARLORD', expectCross: 0,
+    lanes: [[[-1, 2], [3, 2], [3, 7], [7, 7], [7, 2], [11, 2], [11, 7], [14, 7], [14, 4], [16, 4]]],
+    waves: WAVES_1,
+    plan: [[4, 3, 'blaster'], [2, 3, 'blaster'], [6, 3, 'mortar'], [5, 5, 'frost'], [4, 6, 'blaster'], [6, 6, 'blaster'],
+      [8, 3, 'frost'], [10, 3, 'mortar'], [9, 5, 'blaster'], [8, 6, 'mortar'], [10, 6, 'frost'], [12, 3, 'blaster'],
+      [12, 6, 'frost'], [13, 5, 'mortar'], [13, 3, 'frost']],
+  },
+  {
+    name: 'Switchback', tag: 'Long tight zig-zag', gold: 150, hpScale: 1.15, bossMult: 1.2, bossArmor: 5, boss: 'IRON WARLORD', expectCross: 0,
+    lanes: [[[-1, 1], [2, 1], [2, 8], [5, 8], [5, 1], [8, 1], [8, 8], [11, 8], [11, 1], [14, 1], [14, 8], [16, 8]]],
+    waves: WAVES_2,
+    plan: [[3, 4, 'blaster'], [4, 5, 'frost'], [6, 3, 'mortar'], [7, 6, 'blaster'], [9, 4, 'frost'], [10, 5, 'blaster'],
+      [12, 3, 'mortar'], [13, 6, 'blaster'], [3, 2, 'mortar'], [6, 7, 'blaster']],
+  },
+  {
+    name: 'Crossroads', tag: 'Path crosses a bridge', gold: 175, hpScale: 1.3, bossMult: 1.45, bossArmor: 6, boss: 'BRIDGE BREAKER', expectCross: 1,
+    lanes: [[[-1, 5], [10, 5], [10, 1], [5, 1], [5, 8], [13, 8], [13, 3], [16, 3]]],
+    waves: WAVES_3,
+    plan: [[4, 4, 'blaster'], [6, 4, 'frost'], [6, 6, 'mortar'], [4, 6, 'blaster'], [8, 3, 'mortar'], [11, 6, 'blaster'],
+      [12, 4, 'frost'], [3, 3, 'blaster'], [9, 7, 'blaster'], [14, 5, 'mortar']],
+  },
+  {
+    name: 'Twin Gates', tag: 'Two lanes merge', gold: 225, hpScale: 1.45, bossMult: 1.75, bossArmor: 6, boss: 'THE TWIN KING', expectCross: 0,
+    lanes: [
+      [[-1, 1], [5, 1], [5, 4], [7, 4], [10, 4], [10, 7], [13, 7], [13, 2], [16, 2]],
+      [[-1, 8], [4, 8], [4, 6], [7, 6], [7, 4], [10, 4], [10, 7], [13, 7], [13, 2], [16, 2]],
+    ],
+    waves: WAVES_4,
+    plan: [[3, 3, 'blaster'], [2, 6, 'blaster'], [6, 5, 'frost'], [8, 5, 'mortar'], [9, 3, 'blaster'], [11, 5, 'frost'],
+      [12, 4, 'mortar'], [14, 4, 'blaster'], [11, 8, 'blaster'], [6, 2, 'mortar']],
+  },
+];
 
-// ----- Path -----
-const PATH_TILES = [[-1, 2], [3, 2], [3, 7], [7, 7], [7, 2], [11, 2], [11, 7], [14, 7], [14, 4], [16, 4]];
-const PATH_GRID = [];
-for (let r = 0; r < ROWS; r++) PATH_GRID.push(new Array(COLS).fill(false));
-for (let i = 0; i < PATH_TILES.length - 1; i++) {
-  const [c1, r1] = PATH_TILES[i], [c2, r2] = PATH_TILES[i + 1];
-  const mark = (c, r) => { if (c >= 0 && c < COLS && r >= 0 && r < ROWS) PATH_GRID[r][c] = true; };
-  if (r1 === r2) for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) mark(c, r1);
-  else for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) mark(c1, r);
+function buildMap(def, idx) {
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) grid.push(new Array(COLS).fill(false));
+  const crossings = [];
+  const lanes = def.lanes.map((wps) => {
+    const tiles = [], seen = new Set();
+    for (let i = 0; i < wps.length - 1; i++) {
+      const [c1, r1] = wps[i], [c2, r2] = wps[i + 1];
+      const dc = Math.sign(c2 - c1), dr = Math.sign(r2 - r1), n = Math.max(Math.abs(c2 - c1), Math.abs(r2 - r1));
+      for (let k = i === 0 ? 0 : 1; k <= n; k++) {
+        const c = c1 + dc * k, r = r1 + dr * k;
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS) continue;
+        const key = c + ',' + r;
+        if (seen.has(key)) { if (!crossings.some(x => x[0] === c && x[1] === r)) crossings.push([c, r]); }
+        else seen.add(key);
+        tiles.push([c, r]); grid[r][c] = true;
+      }
+    }
+    const pts = wps.map(([c, r]) => ({ x: c * T + T / 2, y: TOP + r * T + T / 2 }));
+    const segs = [];
+    let len = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      segs.push({ ax: a.x, ay: a.y, len: l, start: len, dx: (b.x - a.x) / l, dy: (b.y - a.y) / l, ang: Math.atan2(b.y - a.y, b.x - a.x) });
+      len += l;
+    }
+    return { wps, tiles, pts, segs, len, spawn: pts[0] };
+  });
+  const m = { ...def, id: idx + 1, grid, lanes, crossings, exit: lanes[0].pts[lanes[0].pts.length - 1], bridge: null };
+  if (crossings.length) {
+    const [c, r] = crossings[0], x = c * T + T / 2, y = TOP + r * T + T / 2;
+    const passes = [];
+    for (const s of lanes[0].segs) {
+      const ex = s.ax + s.dx * s.len, ey = s.ay + s.dy * s.len;
+      if (Math.abs(s.dy) < 1e-6 && Math.abs(s.ay - y) < 0.5 && x >= Math.min(s.ax, ex) && x <= Math.max(s.ax, ex)) passes.push({ d: s.start + Math.abs(x - s.ax), horiz: true });
+      else if (Math.abs(s.dx) < 1e-6 && Math.abs(s.ax - x) < 0.5 && y >= Math.min(s.ay, ey) && y <= Math.max(s.ay, ey)) passes.push({ d: s.start + Math.abs(y - s.ay), horiz: false });
+    }
+    passes.sort((a, b) => a.d - b.d);
+    if (passes.length >= 2) m.bridge = { c, r, x, y, d: passes[1].d, horiz: passes[1].horiz };
+  }
+  return m;
 }
-const PATH_PX = PATH_TILES.map(([c, r]) => ({ x: c * T + T / 2, y: TOP + r * T + T / 2 }));
-const SEGS = [];
-let PATH_LEN = 0;
-for (let i = 0; i < PATH_PX.length - 1; i++) {
-  const a = PATH_PX[i], b = PATH_PX[i + 1];
-  const len = Math.hypot(b.x - a.x, b.y - a.y);
-  SEGS.push({ ax: a.x, ay: a.y, len, start: PATH_LEN, dx: (b.x - a.x) / len, dy: (b.y - a.y) / len, ang: Math.atan2(b.y - a.y, b.x - a.x) });
-  PATH_LEN += len;
-}
-function pathAt(d, out) {
-  if (d < 0) d = 0; if (d > PATH_LEN) d = PATH_LEN;
-  let s = SEGS[SEGS.length - 1];
-  for (let i = 0; i < SEGS.length; i++) { if (d <= SEGS[i].start + SEGS[i].len) { s = SEGS[i]; break; } }
+const MAPS = MAP_DEFS.map(buildMap);
+
+function pathAt(lane, d, out) {
+  if (d < 0) d = 0; if (d > lane.len) d = lane.len;
+  const S = lane.segs;
+  let s = S[S.length - 1];
+  for (let i = 0; i < S.length; i++) { if (d <= S[i].start + S[i].len) { s = S[i]; break; } }
   const k = d - s.start;
   out.x = s.ax + s.dx * k; out.y = s.ay + s.dy * k; out.ang = s.ang; out.px = -s.dy; out.py = s.dx;
   return out;
 }
 
-const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const rand = (a, b) => a + Math.random() * (b - a);
-const fmt = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
+function buildQueue(map, waveNum, pace = 1) {
+  const nL = map.lanes.length, q = [];
+  for (let L = 0; L < nL; L++) {
+    let t = 0.3 + L * 0.25;
+    for (const [type, count] of map.waves[waveNum - 1].groups) {
+      const n = Math.floor(count / nL) + (L < count % nL ? 1 : 0);
+      for (let i = 0; i < n; i++) { q.push({ t, type, lane: L }); t += ENEMIES[type].interval * pace; }
+      if (n) t += 0.8 * pace;
+    }
+  }
+  q.sort((a, b) => a.t - b.t);
+  return q;
+}
+
+function waveHp(map, w) {
+  let s = 0;
+  for (const [type, c] of map.waves[w - 1].groups) s += c * ENEMIES[type].hp * HP_MULT[w - 1] * (type === 'boss' ? map.bossMult : map.hpScale);
+  return s;
+}
+function waveCount(map, w) { return map.waves[w - 1].groups.reduce((a, g) => a + g[1], 0); }
+
+// Returns '' if valid, otherwise a description of the problem.
+function validateMap(m) {
+  const errs = [];
+  if (!m.lanes.length) errs.push('no lanes');
+  const ex = m.lanes[0].wps[m.lanes[0].wps.length - 1];
+  m.lanes.forEach((lane, li) => {
+    const w = lane.wps, f = w[0], l = w[w.length - 1];
+    if (f[0] !== -1 || f[1] < 0 || f[1] >= ROWS) errs.push(`lane${li} spawn off left edge`);
+    if (l[0] !== COLS || l[1] < 0 || l[1] >= ROWS) errs.push(`lane${li} exit not on right edge`);
+    if (l[0] !== ex[0] || l[1] !== ex[1]) errs.push(`lane${li} different exit`);
+    for (let i = 0; i < w.length - 1; i++) {
+      const a = w[i], b = w[i + 1];
+      if ((a[0] !== b[0]) === (a[1] !== b[1])) errs.push(`lane${li} seg${i} not straight`);
+      if (i > 0 && (a[0] < 0 || a[0] >= COLS || a[1] < 0 || a[1] >= ROWS)) errs.push(`lane${li} wp${i} off grid`);
+    }
+    const t = lane.tiles;
+    if (!t.length || t[0][0] !== 0 || t[t.length - 1][0] !== COLS - 1) errs.push(`lane${li} tiles do not span edge to edge`);
+    for (let i = 1; i < t.length; i++) if (Math.abs(t[i][0] - t[i - 1][0]) + Math.abs(t[i][1] - t[i - 1][1]) !== 1) { errs.push(`lane${li} gap at tile ${i}`); break; }
+    // flood fill over path tiles from spawn to exit
+    if (t.length) {
+      const goal = t[t.length - 1], vis = new Set([t[0].join(',')]), stack = [t[0]];
+      let found = false;
+      while (stack.length) {
+        const [c, r] = stack.pop();
+        if (c === goal[0] && r === goal[1]) { found = true; break; }
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nc = c + dc, nr = r + dr, k = nc + ',' + nr;
+          if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS || vis.has(k) || !m.grid[nr][nc]) continue;
+          vis.add(k); stack.push([nc, nr]);
+        }
+      }
+      if (!found) errs.push(`lane${li} spawn not connected to exit`);
+    }
+  });
+  if (m.crossings.length !== m.expectCross) errs.push(`crossings ${m.crossings.length} != ${m.expectCross}`);
+  if (m.expectCross && !m.bridge) errs.push('crossing has no bridge');
+  return errs.join('; ');
+}
+
+// ----- Unlock persistence (storage may be blocked) -----
+const STORE_KEY = 'tinyBastion.unlocked';
+let memUnlocked = 1;
+function loadUnlocked() {
+  let v = memUnlocked;
+  try { const n = parseInt(window.localStorage.getItem(STORE_KEY), 10); if (n > v) v = n; } catch (e) { /* blocked */ }
+  return clamp(v, 1, MAPS.length);
+}
+function saveUnlocked(n) {
+  n = clamp(n, 1, MAPS.length);
+  if (n > memUnlocked) memUnlocked = n;
+  try {
+    const cur = parseInt(window.localStorage.getItem(STORE_KEY), 10) || 1;
+    if (n > cur) window.localStorage.setItem(STORE_KEY, String(n));
+  } catch (e) { /* blocked */ }
+}
 
 // ============================================================================
 // Audio (WebAudio, lazily created on first key press)
@@ -194,7 +362,7 @@ const Sfx = (() => {
 // ============================================================================
 // Global harness state
 // ============================================================================
-window.__FORGE__ = window.__FORGE__ || { ready: false, state: 'menu', score: 0, lives: 20, level: 1 };
+window.__FORGE__ = window.__FORGE__ || { ready: false, state: 'menu', score: 0, lives: 20, level: 1, wave: 1 };
 
 // ============================================================================
 // Scene
@@ -204,17 +372,27 @@ class Main extends Phaser.Scene {
 
   // ---------------------------------------------------------------- setup
   create(data) {
+    data = data || {};
+    this.mapIdx = clamp(data.map || 1, 1, MAPS.length);
+    this.map = MAPS[this.mapIdx - 1];
+    this._selftest = !!data.selftest;
     this.genTextures();
+    this.genBoard(this.map);
     this.initState();
-    this.add.image(0, TOP, 'board').setOrigin(0, 0).setDepth(D.board);
+    if (data.score) this.score = data.score;
+    this.unlocked = loadUnlocked();
+    this.menuSel = this.mapIdx <= this.unlocked ? this.mapIdx : 1;
+    this.add.image(0, TOP, `board_${this.map.id}`).setOrigin(0, 0).setDepth(D.board);
+    if (this.map.bridge) {
+      const b = this.map.bridge;
+      this.add.image(b.x, b.y, 'bridge').setDepth(D.enemy + 0.3).setRotation(b.horiz ? Math.PI / 2 : 0);
+    }
     this.makeGates();
     this.hpG = this.add.graphics().setDepth(D.enemy + 0.5);
     this.cursorG = this.add.graphics().setDepth(D.tower + 0.5);
     this.ghostBase = this.add.image(0, 0, 'blaster_b1').setDepth(D.tower + 0.6).setAlpha(0.45).setVisible(false);
     this.ghostTurret = this.add.image(0, 0, 'blaster_t1').setDepth(D.tower + 0.7).setAlpha(0.45).setVisible(false);
     this.ghostKey = '';
-    // Range circle lives in its own Graphics and is only redrawn when it changes.
-    // (The opaque HUD/panel sit above it at D.hud, and clipCircle clips to the field.)
     this.rangeG = this.add.graphics().setDepth(D.tower + 0.4);
     this.rangeKey = '';
     this.partPool = this.makePool(MAX_PARTS + 20, D.fx);
@@ -232,17 +410,17 @@ class Main extends Phaser.Scene {
     this.kills = 0; this.leaks = 0;
     this._bossSpawned = false; this._bossBarShown = false; this._bossShake = false;
     const prevRep = window.__FORGE__.selfTestReport;
-    if (prevRep && !(data && data.selftest)) {
-      this.menuO.add(this.txt(W / 2, 600, `Self-test: ${prevRep.passed}/${prevRep.total} checks passed`, 18,
+    if (prevRep && !data.selftest) {
+      this.menuO.add(this.txt(W / 2, 775, `Self-test: ${prevRep.passed}/${prevRep.total} checks passed`, 18,
         prevRep.passed === prevRep.total ? '#7fdc6a' : '#ff7a7a').setOrigin(0.5));
     }
-    if (data && data.selftest) {
+    if (data.selftest) {
       this.showMenu();
       this.runSelfTest();
       this.state = 'menu';
-      this.menuO.setVisible(true); this.endO.setVisible(false); this.pauseO.setVisible(false);
+      this.menuO.setVisible(true); this.endO.setVisible(false); this.pauseO.setVisible(false); this.levelO.setVisible(false);
       this.time.delayedCall(30, () => this.scene.restart({}));
-    } else if (data && data.autostart) this.startGame();
+    } else if (data.autostart) this.startGame();
     else this.showMenu();
     window.__FORGE__.selfTest = () => { this.scene.restart({ selftest: true }); return 'running: poll window.__FORGE__.selfTestReport'; };
     if (!Main._autoTestDone && /[?&]selftest\b/.test(window.location.search)) {
@@ -257,7 +435,8 @@ class Main extends Phaser.Scene {
 
   initState() {
     this.state = 'menu';
-    this.gold = 150; this.lives = 20; this.score = 0; this.wave = 0;
+    this.gold = this.map.gold; this.lives = 20; this.score = 0; this.wave = 0;
+    this.levelDone = false;
     this.spawning = false; this.spawnQueue = []; this.spawnClock = 0;
     this.countdown = FIRST_COUNTDOWN; this.countdownActive = true;
     this.waveAlive = []; this.waveSpawnDone = []; this.waveCleared = []; this.rushHp = [];
@@ -288,7 +467,7 @@ class Main extends Phaser.Scene {
   // ---------------------------------------------------------------- textures
   genTextures() {
     const tx = this.textures;
-    if (tx.exists('board')) return;
+    if (tx.exists('px')) return;
     const g = this.make.graphics({ x: 0, y: 0, add: false }, false);
     const gen = (key, w, h, fn) => { g.clear(); fn(g); g.generateTexture(key, w, h); };
     const poly = (n, r, rot, cx, cy) => { const p = []; for (let i = 0; i < n; i++) { const a = rot + i * Math.PI * 2 / n; p.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }); } return p; };
@@ -307,6 +486,29 @@ class Main extends Phaser.Scene {
       g.fillStyle(OUT); g.fillCircle(7, 8, 7); g.fillCircle(17, 8, 7); g.fillTriangle(0, 10, 24, 10, 12, 22);
       g.fillStyle(0xff5a5a); g.fillCircle(7, 8, 5); g.fillCircle(17, 8, 5); g.fillTriangle(2.5, 10, 21.5, 10, 12, 19);
       g.fillStyle(0xffffff, 0.55); g.fillCircle(6, 6, 2);
+    });
+    gen('lock', 28, 32, g => {
+      g.lineStyle(7, OUT); g.beginPath(); g.arc(14, 13, 8, Math.PI, 0); g.strokePath();
+      g.lineStyle(3.5, 0xc9d3e0); g.beginPath(); g.arc(14, 13, 8, Math.PI, 0); g.strokePath();
+      g.lineStyle(7, OUT); g.lineBetween(6, 13, 6, 16); g.lineBetween(22, 13, 22, 16);
+      g.lineStyle(3.5, 0xc9d3e0); g.lineBetween(6, 13, 6, 16); g.lineBetween(22, 13, 22, 16);
+      g.fillStyle(OUT); g.fillRoundedRect(1, 14, 26, 18, 4);
+      g.fillStyle(0xffd84a); g.fillRoundedRect(3, 16, 22, 14, 3);
+      g.fillStyle(0x8a5a00); g.fillCircle(14, 21, 2.6); g.fillRect(13, 22, 2, 5);
+    });
+    // bridge deck (vertical orientation, rotated for horizontal crossings)
+    gen('bridge', 104, 104, g => {
+      const c = 52;
+      g.fillStyle(0x000000, 0.3); g.fillRect(c - 33 + 5, c - 47 + 6, 66, 94);
+      g.fillStyle(OUT); g.fillRect(c - 34, c - 48, 68, 96);
+      g.fillStyle(0x8a6a44); g.fillRect(c - 27, c - 46, 54, 92);
+      for (let y = c - 46; y < c + 46; y += 9) {
+        g.fillStyle(0x6e5234); g.fillRect(c - 27, y, 54, 2);
+        g.fillStyle(0xa8845a); g.fillRect(c - 27, y + 2, 54, 1);
+      }
+      g.fillStyle(0xc9a070); g.fillRect(c - 32, c - 46, 5, 92); g.fillRect(c + 27, c - 46, 5, 92);
+      g.fillStyle(0x5a3f22);
+      for (const y of [-43, -15, 15, 43]) { g.fillRect(c - 34, c + y - 4, 8, 8); g.fillRect(c + 26, c + y - 4, 8, 8); }
     });
 
     // enemies
@@ -338,7 +540,6 @@ class Main extends Phaser.Scene {
       g.lineStyle(3, 0xc9a0ff); g.strokeCircle(48, 48, 21);
       g.fillStyle(0xff7ac8); g.fillCircle(48, 48, 10); g.fillStyle(0xffffff, 0.8); g.fillCircle(45, 45, 3.5);
     });
-    // icy variants of each enemy (blend toward #aee3ff so 'slowed' reads instantly)
     for (const k of Object.values(ENEMIES)) {
       const src = tx.get(k.tex).getSourceImage();
       const c = tx.createCanvas(k.tex + '_ice', src.width, src.height), cc = c.context;
@@ -349,7 +550,6 @@ class Main extends Phaser.Scene {
       cc.globalCompositeOperation = 'source-over';
       c.refresh();
     }
-    // level pips (gold diamonds)
     for (let L = 1; L <= 3; L++) gen(`pips${L}`, 40, 12, g => {
       const x0 = 20 - (L - 1) * 5.5;
       for (let i = 0; i < L; i++) {
@@ -362,7 +562,6 @@ class Main extends Phaser.Scene {
     // towers
     for (let L = 1; L <= 3; L++) {
       const cx = 32, cy = 32;
-      // Blaster base
       gen(`blaster_b${L}`, 64, 64, g => {
         const s = 34 + 5 * (L - 1);
         g.fillStyle(OUT); g.fillRoundedRect(cx - s / 2 - 2, cy - s / 2 - 2, s + 4, s + 4, 7);
@@ -372,7 +571,6 @@ class Main extends Phaser.Scene {
         if (L >= 2) { g.fillStyle(0x4ee6ff); [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => g.fillCircle(cx + a * (s / 2 - 6), cy + b * (s / 2 - 6), 2.5)); }
         if (L >= 3) { g.lineStyle(2, 0xbff6ff, 0.9); g.strokeCircle(cx, cy, s / 2 - 9); }
       });
-      // Blaster turret
       gen(`blaster_t${L}`, 64, 64, g => {
         const offs = [[0], [-5, 5], [-8, 0, 8]][L - 1], len = 20 + 2 * L;
         for (const o of offs) {
@@ -385,7 +583,6 @@ class Main extends Phaser.Scene {
         g.fillStyle(0x1d4f5e); g.fillCircle(cx, cy, 4 + L * 0.5);
         g.fillStyle(0xffffff, 0.5); g.fillCircle(cx - 3, cy - 3, 2.5);
       });
-      // Mortar base
       gen(`mortar_b${L}`, 64, 64, g => {
         const R = 19 + 3 * (L - 1), rot = Math.PI / 8;
         g.fillStyle(OUT); g.fillPoints(poly(8, R + 2, rot, cx, cy), true);
@@ -395,7 +592,6 @@ class Main extends Phaser.Scene {
         if (L >= 2) { g.lineStyle(2, 0xffc58a, 0.9); g.strokeCircle(cx, cy, R - 10); }
         if (L >= 3) { g.fillStyle(0xffe0b0); poly(8, R - 4.5, 0, cx, cy).forEach(p => g.fillCircle(p.x, p.y, 1.8)); g.lineStyle(1.5, 0xffe0b0, 0.8); g.strokeCircle(cx, cy, R - 13); }
       });
-      // Mortar tube
       gen(`mortar_t${L}`, 64, 64, g => {
         const tw = 14 + 2 * L, tl = 24 + 2 * L;
         g.fillStyle(OUT); g.fillRoundedRect(cx - 8, cy - tw / 2 - 2, tl + 4, tw + 4, 4);
@@ -406,7 +602,6 @@ class Main extends Phaser.Scene {
         g.fillStyle(0x1e2128); g.fillRect(cx + tl - 11, cy - tw / 2 + 3, 4, tw - 6);
         g.fillStyle(OUT); g.fillCircle(cx - 2, cy, 9); g.fillStyle(0xff9a3c); g.fillCircle(cx - 2, cy, 7);
       });
-      // Frost crystal
       gen(`frost_b${L}`, 64, 64, g => {
         const R = 15 + 3 * (L - 1);
         const spikes = [];
@@ -430,7 +625,6 @@ class Main extends Phaser.Scene {
       });
     }
 
-    // glow + vignette + digits (canvas)
     const gc = tx.createCanvas('glow', 128, 128), gctx = gc.context;
     const gr = gctx.createRadialGradient(64, 64, 0, 64, 64, 64);
     gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
@@ -451,42 +645,50 @@ class Main extends Phaser.Scene {
       dc.add(chars[i], 0, i * cw, 0, cw, chh);
     }
     dc.refresh();
+    g.destroy();
+  }
 
-    // board (static scenery, drawn once)
-    g.clear();
+  // Static scenery for one map, drawn once into a texture.
+  genBoard(map) {
+    const key = `board_${map.id}`;
+    if (this.textures.exists(key)) return;
+    const OUT = 0x0d1118;
+    const g = this.make.graphics({ x: 0, y: 0, add: false }, false);
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
       g.fillStyle(((r + c) & 1) ? 0x2a3547 : 0x2e3a4e, 1); g.fillRect(c * T, r * T, T, T);
     }
-    let seed = 1337;
+    let seed = 1337 + map.id * 7919;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (let i = 0; i < 160; i++) { g.fillStyle(rnd() < 0.5 ? 0x384761 : 0x232d3e, 0.9); g.fillCircle(rnd() * W, rnd() * BOARD_H, 1 + rnd() * 2.2); }
-    for (let i = 0; i < 40; i++) { // grass tufts
+    for (let i = 0; i < 40; i++) {
       const x = rnd() * W, y = rnd() * BOARD_H; g.lineStyle(1.5, 0x3d5068, 0.9);
       g.lineBetween(x, y, x - 3, y - 5); g.lineBetween(x, y, x, y - 6); g.lineBetween(x, y, x + 3, y - 5);
     }
     g.lineStyle(1, 0x1b2230, 0.4);
     for (let c = 1; c < COLS; c++) g.lineBetween(c * T, 0, c * T, BOARD_H);
     for (let r = 1; r < ROWS; r++) g.lineBetween(0, r * T, W, r * T);
-    const pts = PATH_TILES.map(([c, r]) => ({ x: c * T + T / 2, y: r * T + T / 2 }));
+    const lanePts = map.lanes.map(l => l.pts.map(p => ({ x: p.x, y: p.y - TOP })));
     const band = (hw, color, ox, oy) => {
       g.fillStyle(color, 1);
-      for (let i = 0; i < pts.length - 1; i++) {
-        const a = pts[i], b = pts[i + 1];
-        if (a.y === b.y) g.fillRect(Math.min(a.x, b.x) + ox, a.y - hw + oy, Math.abs(b.x - a.x), hw * 2);
-        else g.fillRect(a.x - hw + ox, Math.min(a.y, b.y) + oy, hw * 2, Math.abs(b.y - a.y));
+      for (const pts of lanePts) {
+        for (let i = 0; i < pts.length - 1; i++) {
+          const a = pts[i], b = pts[i + 1];
+          if (a.y === b.y) g.fillRect(Math.min(a.x, b.x) + ox, a.y - hw + oy, Math.abs(b.x - a.x), hw * 2);
+          else g.fillRect(a.x - hw + ox, Math.min(a.y, b.y) + oy, hw * 2, Math.abs(b.y - a.y));
+        }
+        for (let i = 1; i < pts.length - 1; i++) g.fillCircle(pts[i].x + ox, pts[i].y + oy, hw);
       }
-      for (let i = 1; i < pts.length - 1; i++) g.fillCircle(pts[i].x + ox, pts[i].y + oy, hw);
     };
     band(31, 0x1f2838, 0, 4);
     band(29, 0x8a7654, 0, 0);
     band(25, 0xc9b48a, 0, 3);
     band(15, 0xd2bf95, 0, 4);
-    for (let i = 0; i < 90; i++) {
-      const s = SEGS[Math.floor(rnd() * SEGS.length)], k = rnd() * s.len, off = (rnd() * 2 - 1) * 18;
+    for (let i = 0; i < 90 * map.lanes.length; i++) {
+      const lane = map.lanes[Math.floor(rnd() * map.lanes.length)];
+      const s = lane.segs[Math.floor(rnd() * lane.segs.length)], k = rnd() * s.len, off = (rnd() * 2 - 1) * 18;
       const x = s.ax + s.dx * k - s.dy * off, y = s.ay - TOP + s.dy * k + s.dx * off + 3;
       g.fillStyle(rnd() < 0.5 ? 0xa8946c : 0xe0d0aa, 1); g.fillCircle(x, y, 1.2 + rnd() * 1.8);
     }
-    // gates
     const gate = (x, y, col, dark, dir) => {
       const px = dir > 0 ? x : x - 18;
       g.fillStyle(OUT); g.fillRoundedRect(px - 1, y - 45, 20, 18, 4); g.fillRoundedRect(px - 1, y + 27, 20, 18, 4);
@@ -495,17 +697,17 @@ class Main extends Phaser.Scene {
       g.fillStyle(col, 0.85); g.fillRect(px + 6, y - 28, 6, 56);
       g.fillStyle(0xffffff, 0.7); g.fillRect(px + 8, y - 26, 2, 52);
     };
-    gate(0, 2 * T + T / 2, 0xff5a5a, 0x4a2430, 1);
-    gate(W, 4 * T + T / 2, 0x4ee6ff, 0x1d4f5e, -1);
-    g.generateTexture('board', W, BOARD_H);
+    for (const lane of map.lanes) gate(0, lane.spawn.y - TOP, 0xff5a5a, 0x4a2430, 1);
+    gate(W, map.exit.y - TOP, 0x4ee6ff, 0x1d4f5e, -1);
+    g.generateTexture(key, W, BOARD_H);
     g.destroy();
   }
 
   makeGates() {
-    const sy = TOP + 2 * T + T / 2, ey = TOP + 4 * T + T / 2;
-    const a = this.add.image(10, sy, 'glow').setBlendMode(ADD).setTint(0xff5a5a).setScale(1.1, 1.3).setDepth(D.gate).setAlpha(0.4);
-    const b = this.add.image(W - 10, ey, 'glow').setBlendMode(ADD).setTint(0x4ee6ff).setScale(1.1, 1.3).setDepth(D.gate).setAlpha(0.4);
-    this.tweens.add({ targets: [a, b], alpha: 0.75, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    const objs = [];
+    for (const lane of this.map.lanes) objs.push(this.add.image(10, lane.spawn.y, 'glow').setBlendMode(ADD).setTint(0xff5a5a).setScale(1.1, 1.3).setDepth(D.gate).setAlpha(0.4));
+    objs.push(this.add.image(W - 10, this.map.exit.y, 'glow').setBlendMode(ADD).setTint(0x4ee6ff).setScale(1.1, 1.3).setDepth(D.gate).setAlpha(0.4));
+    this.tweens.add({ targets: objs, alpha: 0.75, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
   }
 
   // ---------------------------------------------------------------- pools
@@ -531,11 +733,12 @@ class Main extends Phaser.Scene {
     this.add.rectangle(0, 0, W, TOP, 0x141a26).setOrigin(0).setDepth(D.hud);
     this.add.rectangle(0, TOP - 2, W, 2, 0x34425a).setOrigin(0).setDepth(D.hud);
     this.hudCoin = this.add.image(24, 26, 'coin').setDepth(D.hud + 1);
-    this.goldText = this.txt(42, 26, '150', 24, '#ffd84a').setOrigin(0, 0.5).setDepth(D.hud + 1);
+    this.goldText = this.txt(42, 26, String(this.gold), 24, '#ffd84a').setOrigin(0, 0.5).setDepth(D.hud + 1);
     this.add.image(150, 27, 'heart').setDepth(D.hud + 1);
     this.livesText = this.txt(168, 26, '20', 24, '#ff8a8a').setOrigin(0, 0.5).setDepth(D.hud + 1);
-    this.waveText = this.txt(250, 26, 'WAVE 1/10', 22, '#e6eef8').setOrigin(0, 0.5).setDepth(D.hud + 1);
-    this.scoreText = this.txt(420, 26, 'SCORE 0', 22, '#c9b48a').setOrigin(0, 0.5).setDepth(D.hud + 1);
+    this.levelText = this.txt(240, 15, `LEVEL ${this.mapIdx}/${MAPS.length} · ${this.map.name.toUpperCase()}`, 13, '#c9a0ff', { strokeThickness: 3 }).setOrigin(0, 0.5).setDepth(D.hud + 1);
+    this.waveText = this.txt(240, 36, 'WAVE 1/10', 20, '#e6eef8').setOrigin(0, 0.5).setDepth(D.hud + 1);
+    this.scoreText = this.txt(440, 26, 'SCORE 0', 22, '#c9b48a').setOrigin(0, 0.5).setDepth(D.hud + 1);
     this.statusText = this.txt(W - 14, 26, '', 18, '#aee3ff').setOrigin(1, 0.5).setDepth(D.hud + 1);
   }
 
@@ -556,6 +759,7 @@ class Main extends Phaser.Scene {
     });
     this.selShown = null;
     this.infoText = this.txt(482, y0 + 10, '', 14, '#dfe8f5', { lineSpacing: 5, strokeThickness: 3 }).setDepth(D.hud + 1);
+    this.infoShown = null;
     this.txt(482, y0 + 92, 'Space: next wave  ·  P: pause', 13, '#7f91ab', { strokeThickness: 3 }).setDepth(D.hud + 1);
     this.add.rectangle(708, y0 + 8, 306, 104, 0x1f2838).setOrigin(0).setStrokeStyle(2, 0x34425a).setDepth(D.hud + 1);
     this.pvTitle = this.txt(720, y0 + 28, '', 17, '#e6eef8').setOrigin(0, 0.5).setDepth(D.hud + 2);
@@ -566,12 +770,12 @@ class Main extends Phaser.Scene {
   buildPreview(n, final) {
     this.previewItems.forEach(o => o.destroy());
     this.previewItems = [];
-    const wd = WAVES[n - 1];
+    const wd = this.map.waves[n - 1];
     this.pvTitle.setText(final ? `FINAL WAVE ${n}/10` : `NEXT: WAVE ${n}`);
     this.pvLabel.setText(wd.label).setColor(LABEL_COLORS[wd.label] || '#ffffff');
     const counts = new Map();
     for (const [type, c] of wd.groups) counts.set(type, (counts.get(type) || 0) + c);
-    let list = [...counts.entries()];
+    const list = [...counts.entries()];
     list.sort((a, b) => (b[0] === 'boss') - (a[0] === 'boss'));
     let x = 720;
     for (const [type, cnt] of list) {
@@ -588,7 +792,7 @@ class Main extends Phaser.Scene {
     this.bossBg = this.add.rectangle(W / 2, y, bw + 8, 24, 0x0d1118, 0.9).setStrokeStyle(2, 0x9b5cff).setDepth(D.banner);
     this.bossTrail = this.add.rectangle(W / 2 - bw / 2, y, bw, 16, 0xffffff, 0.8).setOrigin(0, 0.5).setDepth(D.banner);
     this.bossFill = this.add.rectangle(W / 2 - bw / 2, y, bw, 16, 0x9b5cff).setOrigin(0, 0.5).setDepth(D.banner);
-    this.bossLabel = this.txt(W / 2, y, 'THE WARLORD', 14, '#ffffff').setOrigin(0.5).setDepth(D.banner);
+    this.bossLabel = this.txt(W / 2, y, this.map.boss, 14, '#ffffff').setOrigin(0.5).setDepth(D.banner);
     this.bossParts = [this.bossBg, this.bossTrail, this.bossFill, this.bossLabel];
     this.bossTrailV = 1;
     this.bossParts.forEach(p => p.setVisible(false));
@@ -610,16 +814,35 @@ class Main extends Phaser.Scene {
   makeOverlays() {
     // Menu
     this.menuO = this.add.container(0, 0).setDepth(D.overlay);
-    const mt = this.txt(W / 2, 210, 'Tiny Bastion', 80, '#4ee6ff', { strokeThickness: 10 }).setOrigin(0.5);
-    const ms = this.txt(W / 2, 285, 'Hold the path through 10 waves', 24, '#c9b48a').setOrigin(0.5);
-    this.menuPrompt = this.txt(W / 2, 370, 'Press Enter to start', 34, '#ffd84a').setOrigin(0.5);
-    const mc = this.txt(W / 2, 480,
+    const mt = this.txt(W / 2, 120, 'Tiny Bastion', 80, '#4ee6ff', { strokeThickness: 10 }).setOrigin(0.5);
+    const ms = this.txt(W / 2, 190, 'Hold the path across 4 maps of 10 waves', 24, '#c9b48a').setOrigin(0.5);
+    this.menuO.add([this.add.rectangle(0, 0, W, H, 0x0d1118, 0.8).setOrigin(0), mt, ms]);
+    // level cards
+    this.levelCards = [];
+    const cw = 232, ch = 104, gap = 12, x0 = W / 2 - (4 * cw + 3 * gap) / 2, y = 240;
+    MAPS.forEach((m, i) => {
+      const x = x0 + i * (cw + gap);
+      const bg = this.add.rectangle(x, y, cw, ch, 0x1f2838).setOrigin(0).setStrokeStyle(2, 0x34425a);
+      const num = this.txt(x + 14, y + 22, `${i + 1}`, 26, '#ffd84a').setOrigin(0, 0.5);
+      const name = this.txt(x + 42, y + 22, m.name, 20, '#e6eef8').setOrigin(0, 0.5);
+      const tag = this.txt(x + 14, y + 52, m.tag, 14, '#aee3ff', { strokeThickness: 3 }).setOrigin(0, 0.5);
+      const pips = [];
+      for (let k = 0; k < 4; k++) pips.push(this.add.rectangle(x + 14 + k * 20, y + 82, 14, 10, k <= i ? 0xff9a3c : 0x34425a).setOrigin(0, 0.5).setStrokeStyle(1.5, 0x0d1118));
+      const lock = this.add.image(x + cw - 24, y + 24, 'lock');
+      const lockTxt = this.txt(x + cw - 12, y + 82, 'LOCKED', 13, '#ff9a9a', { strokeThickness: 3 }).setOrigin(1, 0.5);
+      this.menuO.add([bg, num, name, tag, ...pips, lock, lockTxt]);
+      this.levelCards.push({ bg, items: [num, name, tag, ...pips], lock, lockTxt });
+    });
+    this.menuHint = this.txt(W / 2, 372, 'Keys 1-4: choose a level', 18, '#7f91ab').setOrigin(0.5);
+    this.menuPrompt = this.txt(W / 2, 420, 'Press Enter to start', 34, '#ffd84a').setOrigin(0.5);
+    const mc = this.txt(W / 2, 540,
       'Arrows: move cursor    1 / 2 / 3: build Blaster / Mortar / Frost\n' +
       'U: upgrade    S: sell (60% refund)    Space: send wave early (+gold, but tougher)\n' +
       'P: pause    Mouse click: place last selected tower',
       17, '#aee3ff', { align: 'center', lineSpacing: 10 }).setOrigin(0.5);
-    this.menuO.add([this.add.rectangle(0, 0, W, H, 0x0d1118, 0.78).setOrigin(0), mt, ms, this.menuPrompt, mc]);
+    this.menuO.add([this.menuHint, this.menuPrompt, mc]);
     this.tweens.add({ targets: this.menuPrompt, alpha: 0.35, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    this.refreshMenu();
 
     // Pause
     this.pauseO = this.add.container(0, 0).setDepth(D.overlay).setVisible(false);
@@ -632,9 +855,26 @@ class Main extends Phaser.Scene {
     // End screen
     this.endO = this.add.container(0, 0).setDepth(D.overlay).setVisible(false);
     this.endTitle = this.txt(W / 2, 240, '', 84, '#ffd84a', { strokeThickness: 10 }).setOrigin(0.5);
-    this.endStats = this.txt(W / 2, 360, '', 26, '#e6eef8', { align: 'center', lineSpacing: 10 }).setOrigin(0.5);
-    this.endPrompt = this.txt(W / 2, 480, 'Press Enter to play again', 30, '#ffd84a').setOrigin(0.5);
+    this.endStats = this.txt(W / 2, 370, '', 26, '#e6eef8', { align: 'center', lineSpacing: 10 }).setOrigin(0.5);
+    this.endPrompt = this.txt(W / 2, 500, 'Press Enter to play again', 30, '#ffd84a').setOrigin(0.5);
     this.endO.add([this.add.rectangle(0, 0, W, H, 0x0d1118, 0.75).setOrigin(0), this.endTitle, this.endStats, this.endPrompt]);
+
+    // Level complete screen (state stays 'playing')
+    this.levelO = this.add.container(0, 0).setDepth(D.overlay).setVisible(false);
+    this.lvTitle = this.txt(W / 2, 230, 'LEVEL COMPLETE', 72, '#7fdc6a', { strokeThickness: 10 }).setOrigin(0.5);
+    this.lvStats = this.txt(W / 2, 360, '', 26, '#e6eef8', { align: 'center', lineSpacing: 10 }).setOrigin(0.5);
+    this.lvPrompt = this.txt(W / 2, 500, 'Press Enter for the next level', 30, '#ffd84a').setOrigin(0.5);
+    this.levelO.add([this.add.rectangle(0, 0, W, H, 0x0d1118, 0.75).setOrigin(0), this.lvTitle, this.lvStats, this.lvPrompt]);
+  }
+
+  refreshMenu() {
+    this.levelCards.forEach((cd, i) => {
+      const open = i + 1 <= this.unlocked, sel = i + 1 === this.menuSel;
+      cd.bg.setStrokeStyle(sel ? 3 : 2, sel ? 0xffd84a : 0x34425a, 1).setFillStyle(sel ? 0x2b3850 : 0x1f2838);
+      cd.items.forEach(o => o.setAlpha(open ? 1 : 0.4));
+      cd.bg.setAlpha(open ? 1 : 0.6);
+      cd.lock.setVisible(!open); cd.lockTxt.setVisible(!open);
+    });
   }
 
   makeFloatTexts() {
@@ -668,8 +908,10 @@ class Main extends Phaser.Scene {
   }
   startGame() {
     this.state = 'playing';
-    this.menuO.setVisible(false); this.endO.setVisible(false);
-    this.showBanner('BUILD YOUR DEFENSES', 'Press Space to start Wave 1 now', '#4ee6ff');
+    this.menuO.setVisible(false); this.endO.setVisible(false); this.levelO.setVisible(false);
+    const twin = this.map.lanes.length > 1;
+    this.showBanner(`LEVEL ${this.mapIdx}: ${this.map.name.toUpperCase()}`,
+      twin ? 'Two gates! Enemies split between lanes  ·  Space: start Wave 1' : 'Build your defenses  ·  Space: start Wave 1 now', '#4ee6ff');
     Sfx.place();
   }
   pauseGame() {
@@ -689,26 +931,44 @@ class Main extends Phaser.Scene {
     Sfx.defeat();
     this.cameras.main.shake(500, 0.015, true);
     this.endTitle.setText('DEFEAT').setColor('#ff5a5a');
-    this.endStats.setText(`Wave reached: ${Math.max(1, this.wave)}/10\nScore: ${this.score}`);
-    this.showEnd();
+    this.endStats.setText(`Level ${this.mapIdx}: ${this.map.name}\nWave reached: ${Math.max(1, this.wave)}/10\nScore: ${this.score}`);
+    this.endPrompt.setText('Press Enter to restart from Level 1');
+    this.showEnd(this.endO);
+  }
+  celebrate() {
+    Sfx.victory();
+    const cols = [0x4ee6ff, 0xffd84a, 0xff7ac8, 0x7fbf6a, 0xff9a3c];
+    for (let i = 0; i < 5; i++) this.burst(rand(150, W - 150), rand(TOP + 100, TOP + 400), cols[i], 16, 320);
+  }
+  finishLevel() {
+    if (this.mapIdx < MAPS.length) this.completeLevel(); else this.win();
+  }
+  completeLevel() {
+    if (this.state !== 'playing' || this.levelDone) return;
+    this.levelDone = true;
+    this.heldCode = null;
+    const bonus = this.lives * 100;
+    this.score += bonus;
+    this.celebrate();
+    if (!this._selftest) { saveUnlocked(this.mapIdx + 1); this.unlocked = loadUnlocked(); }
+    const next = MAPS[this.mapIdx];
+    this.lvStats.setText(`${this.map.name} cleared!\nLives left: ${this.lives}   (+${bonus})\nScore: ${this.score}\nNext: Level ${this.mapIdx + 1} · ${next.name}`);
+    this.showEnd(this.levelO);
   }
   win() {
     if (this.state !== 'playing') return;
     this.state = 'won';
     this.score += this.lives * 100;
-    Sfx.victory();
-    for (let i = 0; i < 5; i++) {
-      const cols = [0x4ee6ff, 0xffd84a, 0xff7ac8, 0x7fbf6a, 0xff9a3c];
-      this.burst(rand(150, W - 150), rand(TOP + 100, TOP + 400), cols[i], 16, 320);
-    }
+    this.celebrate();
     this.endTitle.setText('VICTORY!').setColor('#ffd84a');
-    this.endStats.setText(`All 10 waves held!\nLives left: ${this.lives}   (+${this.lives * 100})\nScore: ${this.score}`);
-    this.showEnd();
+    this.endStats.setText(`All ${MAPS.length} levels conquered!\nLives left: ${this.lives}   (+${this.lives * 100})\nScore: ${this.score}`);
+    this.endPrompt.setText('Press Enter to play again');
+    this.showEnd(this.endO);
   }
-  showEnd() {
+  showEnd(o) {
     this.bossParts.forEach(p => p.setVisible(false));
-    this.endO.setVisible(true).setAlpha(0);
-    this.tweens.add({ targets: this.endO, alpha: 1, duration: 450 });
+    o.setVisible(true).setAlpha(0);
+    this.tweens.add({ targets: o, alpha: 1, duration: 450 });
   }
 
   // ---------------------------------------------------------------- input
@@ -716,11 +976,23 @@ class Main extends Phaser.Scene {
     Sfx.init();
     if (e.repeat) return;
     const c = e.code, st = this.state;
+    if (st === 'menu') {
+      const n = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4 }[c];
+      if (n) {
+        if (n <= this.unlocked) { if (this.menuSel !== n) { this.menuSel = n; this.refreshMenu(); } Sfx.tick(); }
+        else Sfx.invalid();
+        return;
+      }
+    }
     if (c === 'Enter') {
-      if (st === 'menu') this.startGame();
-      else if (st === 'won' || st === 'lost') this.scene.restart({ autostart: true });
+      if (st === 'menu') {
+        if (this.menuSel !== this.mapIdx) this.scene.restart({ autostart: true, map: this.menuSel });
+        else this.startGame();
+      } else if (st === 'won' || st === 'lost') this.scene.restart({ autostart: true, map: 1 });
+      else if (st === 'playing' && this.levelDone) this.scene.restart({ autostart: true, map: this.mapIdx + 1, score: this.score });
       return;
     }
+    if (this.levelDone) return;
     if (c === 'KeyP') {
       if (st === 'playing') this.pauseGame(); else if (st === 'paused') this.resumeGame();
       return;
@@ -759,7 +1031,7 @@ class Main extends Phaser.Scene {
   }
   onPointer(p) {
     Sfx.init();
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || this.levelDone) return;
     const x = p.x, y = p.y;
     if (y >= TOP && y < PANEL_Y && x >= 0 && x < W) {
       this.cx = clamp(Math.floor(x / T), 0, COLS - 1);
@@ -786,7 +1058,7 @@ class Main extends Phaser.Scene {
   tryPlace(type) {
     const d = TOWERS[type];
     this.selType = type;
-    if (PATH_GRID[this.cy][this.cx]) return this.invalid("Can't build on the path");
+    if (this.map.grid[this.cy][this.cx]) return this.invalid("Can't build on the path");
     if (this.towerGrid[this.cy][this.cx]) return this.invalid('Tile occupied');
     if (this.gold < d.cost) return this.invalid(`Need ${d.cost}g`);
     this.gold -= d.cost;
@@ -860,7 +1132,6 @@ class Main extends Phaser.Scene {
   // ---------------------------------------------------------------- waves
   startNextWave(early) {
     if (this.spawning || this.wave >= TOTAL_WAVES) return false;
-    // Early-send bonus only applies to the between-wave countdowns (not before wave 1).
     let heat = 0;
     if (early && this.countdownActive && this.wave >= 1) {
       heat = rushHeat(this.countdown);
@@ -876,9 +1147,9 @@ class Main extends Phaser.Scene {
     this.spawning = true;
     this.spawnClock = 0;
     this.rushHp[this.wave] = 1 + RUSH_HP * heat;
-    this.spawnQueue = buildQueue(this.wave, 1 - RUSH_PACK * heat);
+    this.spawnQueue = buildQueue(this.map, this.wave, 1 - RUSH_PACK * heat);
     this.waveAlive[this.wave] = this.waveAlive[this.wave] || 0;
-    const wd = WAVES[this.wave - 1];
+    const wd = this.map.waves[this.wave - 1];
     if (heat > 0.05) this.showBanner(`WAVE ${this.wave} RUSHED`, `${wd.label}  ·  +${Math.round(RUSH_HP * heat * 100)}% HP, packed tight`, '#ff9a3c');
     else this.showBanner(`WAVE ${this.wave}`, wd.label, LABEL_COLORS[wd.label] || '#ffffff');
     Sfx.waveStart();
@@ -895,20 +1166,23 @@ class Main extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- enemies
-  spawnEnemy(type, wave) {
-    const d = ENEMIES[type], hp = d.hp * HP_MULT[wave - 1] * (this.rushHp[wave] || 1);
+  spawnEnemy(type, wave, laneIdx = 0) {
+    const m = this.map, d = ENEMIES[type], isBoss = type === 'boss';
+    const lane = m.lanes[laneIdx] || m.lanes[0];
+    const hp = d.hp * HP_MULT[wave - 1] * (isBoss ? m.bossMult : m.hpScale) * (this.rushHp[wave] || 1);
     const e = {
-      type, wave, hp, maxHp: hp, armor: d.armor, speed: d.speed, r: d.r, bounty: d.bounty, color: d.color, tex: d.tex,
-      dist: 0, x: 0, y: 0, off: type === 'swarm' ? rand(-13, 13) : type === 'boss' ? 0 : rand(-5, 5),
-      slowAmt: 0, slowT: 0, flash: 0, tm: 0, healT: 1 + Math.random(), iceT: Math.random() * 0.3, dead: false,
+      type, wave, hp, maxHp: hp, armor: isBoss ? m.bossArmor : d.armor, speed: d.speed, r: d.r, bounty: d.bounty, color: d.color, tex: d.tex,
+      lane, laneIdx: m.lanes.indexOf(lane), dist: 0, rem: lane.len, x: 0, y: 0, off: type === 'swarm' ? rand(-13, 13) : isBoss ? 0 : rand(-5, 5),
+      slowAmt: 0, slowT: 0, flash: 0, tm: 0, healT: 1 + Math.random(), iceT: Math.random() * 0.3, dead: false, onBridge: false,
+      baseDepth: isBoss ? D.enemy + 0.2 : D.enemy,
     };
-    const P = pathAt(0, this._pp);
+    const P = pathAt(lane, 0, this._pp);
     e.x = P.x + P.px * e.off; e.y = P.y + P.py * e.off;
     e.shadow = this.add.image(e.x + 3, e.y + e.r * 0.75, 'shadow').setDepth(D.shadow).setAlpha(0.35).setScale(e.r * 2.2 / 64, e.r * 0.9 / 28);
-    e.spr = this.add.image(e.x, e.y, d.tex).setDepth(type === 'boss' ? D.enemy + 0.2 : D.enemy);
+    e.spr = this.add.image(e.x, e.y, d.tex).setDepth(e.baseDepth);
     this.enemies.push(e);
     this.waveAlive[wave] = (this.waveAlive[wave] || 0) + 1;
-    if (type === 'boss') {
+    if (isBoss) {
       this.boss = e;
       this.bossTrailV = 1;
       this.bossParts.forEach(p => p.setVisible(true));
@@ -917,11 +1191,11 @@ class Main extends Phaser.Scene {
       this._bossBarShown = this.bossBg.visible;
       this._bossShake = this.cameras.main.shakeEffect.isRunning;
       Sfx.boss();
-      this.showBanner('THE WARLORD', 'A boss approaches!', '#c9a0ff');
-      this.fx('glow', 20, e.y, { tint: 0x9b5cff, add: true, s0: 1, s1: 3, life: 0.6, a: 0.9 });
-      this.fx('ring', 20, e.y, { tint: 0x9b5cff, s0: 0.3, s1: 3, life: 0.7, a: 1 });
+      this.showBanner(m.boss, 'A boss approaches!', '#c9a0ff');
+      this.fx('glow', 20, lane.spawn.y, { tint: 0x9b5cff, add: true, s0: 1, s1: 3, life: 0.6, a: 0.9 });
+      this.fx('ring', 20, lane.spawn.y, { tint: 0x9b5cff, s0: 0.3, s1: 3, life: 0.7, a: 1 });
     } else if (this.parts.length < 200) {
-      this.fx('glow', 12, e.y, { tint: 0xff5a5a, add: true, s0: 0.3, s1: 0.6, life: 0.25, a: 0.7 });
+      this.fx('glow', 12, lane.spawn.y, { tint: 0xff5a5a, add: true, s0: 0.3, s1: 0.6, life: 0.25, a: 0.7 });
     }
   }
 
@@ -964,7 +1238,7 @@ class Main extends Phaser.Scene {
     if (boss) {
       this.cameras.main.shake(800, 0.02, true);
       for (let i = 0; i < 3; i++) this.fx('ring', e.x, e.y, { tint: i === 1 ? 0xffffff : 0x9b5cff, s0: 0.3, s1: 3 + i, life: 0.6 + i * 0.2, a: 1 });
-      this.showBanner('WARLORD DEFEATED', '', '#ffd84a');
+      this.showBanner(`${this.map.boss} DEFEATED`, '', '#ffd84a');
       Sfx.explode();
     }
     this.removeEnemy(e);
@@ -980,27 +1254,32 @@ class Main extends Phaser.Scene {
     this.tweens.add({ targets: this.vignette, alpha: 0, duration: 550, ease: 'Quad.out' });
     this.cameras.main.shake(e.type === 'boss' ? 400 : 180, e.type === 'boss' ? 0.014 : 0.006);
     Sfx.lifeLost();
-    this.floatText(W - 60, TOP + 4 * T + 10, `-${cost}`, '#ff5a5a', 26);
+    this.floatText(W - 60, this.map.exit.y - 22, `-${cost}`, '#ff5a5a', 26);
     this.removeEnemy(e);
     if (this.lives <= 0) this.lose();
   }
 
   updateEnemies(dt) {
-    const P = this._pp;
+    const P = this._pp, br = this.map.bridge;
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.dead) continue;
       if (e.slowT > 0) { e.slowT -= dt; if (e.slowT <= 0) { e.slowT = 0; e.slowAmt = 0; } }
       e.dist += e.speed * T * (1 - e.slowAmt) * dt;
-      if (e.dist >= PATH_LEN) {
+      e.rem = e.lane.len - e.dist;
+      if (e.dist >= e.lane.len) {
         this.leak(e);
         if (this.state !== 'playing') return;
         continue;
       }
-      pathAt(e.dist, P);
+      pathAt(e.lane, e.dist, P);
       e.x = P.x + P.px * e.off; e.y = P.y + P.py * e.off;
       e.spr.setPosition(e.x, e.y);
       e.shadow.setPosition(e.x + 3, e.y + e.r * 0.75);
+      if (br && e.laneIdx === 0) {
+        const on = Math.abs(e.dist - br.d) < T * 0.85;
+        if (on !== e.onBridge) { e.onBridge = on; e.spr.setDepth(e.baseDepth + (on ? 0.4 : 0)); }
+      }
       if (e.type === 'runner') e.spr.setRotation(P.ang);
       else if (e.type === 'boss') { e.spr.rotation += dt * 0.5; e.spr.setScale(1 + 0.05 * Math.sin(this.simT * 5)); }
       if (e.flash > 0) e.flash -= dt;
@@ -1047,12 +1326,13 @@ class Main extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- towers
+  // Targets the enemy with the least path remaining (works across merging lanes).
   findTarget(x, y, R2, min2) {
-    let best = null, bd = -1;
+    let best = null, br = Infinity;
     for (const e of this.enemies) {
       if (e.dead) continue;
       const dx = e.x - x, dy = e.y - y, d2 = dx * dx + dy * dy;
-      if (d2 <= R2 && d2 >= min2 && e.dist > bd) { bd = e.dist; best = e; }
+      if (d2 <= R2 && d2 >= min2 && e.rem < br) { br = e.rem; best = e; }
     }
     return best;
   }
@@ -1094,7 +1374,6 @@ class Main extends Phaser.Scene {
         if (n > 0) { this.frostPulse(t, R2, R); t.cd = st.cd; }
       }
       if (t.cd < 0) t.cd = 0;
-      // visuals
       const v = t.pop.v, ls = v * LEVEL_SCALE[t.level - 1];
       t.base.setScale(ls * (1 + t.pulse * 0.18));
       t.pips.setScale(v);
@@ -1125,8 +1404,8 @@ class Main extends Phaser.Scene {
 
   fireShell(t, tg) {
     const dur = 0.9;
-    const pred = Math.min(PATH_LEN, tg.dist + tg.speed * T * (1 - tg.slowAmt) * dur);
-    const P = pathAt(pred, {});
+    const pred = Math.min(tg.lane.len, tg.dist + tg.speed * T * (1 - tg.slowAmt) * dur);
+    const P = pathAt(tg.lane, pred, {});
     const tx = P.x + P.px * tg.off, ty = P.y + P.py * tg.off;
     const len = 20 + 2 * t.level, sx = t.x + Math.cos(t.angle) * len, sy = t.y + Math.sin(t.angle) * len;
     t.recoil = 1.5;
@@ -1153,7 +1432,6 @@ class Main extends Phaser.Scene {
       this.applySlow(e, st.slow, st.slowDur);
       total += this.dealDamage(e, st.dmg, 0xaee3ff, true);
     }
-    // merged number shown over the enemies that were hit
     if (total > 0 && n > 0) this.spawnNumber(sx / n, sy / n - 26, total, 0xaee3ff, 1.1);
     this.fx('ring', t.x, t.y, { tint: 0xaee3ff, s0: 0.2, s1: R / 63, life: 0.45, a: 0.6, depth: D.ground });
     this.fx('glow', t.x, t.y, { tint: 0xaee3ff, add: true, s0: 0.6, s1: 1.2, life: 0.3, a: 0.5, depth: D.ground });
@@ -1327,7 +1605,7 @@ class Main extends Phaser.Scene {
   drawCursor(dt) {
     const g = this.cursorG;
     g.clear();
-    if (this.state !== 'playing') {
+    if (this.state !== 'playing' || this.levelDone) {
       this.ghostBase.setVisible(false); this.ghostTurret.setVisible(false);
       if (this.rangeKey !== '') { this.rangeKey = ''; this.rangeG.clear(); }
       return;
@@ -1341,7 +1619,7 @@ class Main extends Phaser.Scene {
     const y = this.cpy;
     if (this.cursorShake > 0) { this.cursorShake -= dt; x += Math.sin(this.cursorShake * 70) * 6 * Math.max(0, this.cursorShake / 0.25); }
     const tower = this.towerGrid[this.cy][this.cx];
-    const onPath = PATH_GRID[this.cy][this.cx];
+    const onPath = this.map.grid[this.cy][this.cx];
     let color, range, minR = 0, afford = true;
     if (tower) { color = 0xffd84a; range = tower.stats.range; minR = tower.stats.minRange; }
     else {
@@ -1367,7 +1645,6 @@ class Main extends Phaser.Scene {
       g.moveTo(x + sx * s, y + sy * (s - L)); g.lineTo(x + sx * s, y + sy * s); g.lineTo(x + sx * (s - L), y + sy * s);
       g.strokePath();
     }
-    // ghost preview
     if (!tower && !onPath) {
       const key = this.selType;
       if (this.ghostKey !== key) {
@@ -1382,7 +1659,6 @@ class Main extends Phaser.Scene {
     } else { this.ghostBase.setVisible(false); this.ghostTurret.setVisible(false); }
   }
 
-  // Circle clipped to the play area (between the HUD bar and the bottom panel).
   clipCircle(g, x, y, r, color, fillA, strokeA, lw) {
     const N = 56;
     if (!this._cp) { this._cp = []; for (let i = 0; i < N; i++) this._cp.push({ x: 0, y: 0, inside: true }); }
@@ -1419,14 +1695,21 @@ class Main extends Phaser.Scene {
     }
   }
 
+  setTextIfChanged(obj, key, s) {
+    if (this['_last_' + key] === s) return;
+    this['_last_' + key] = s;
+    obj.setText(s);
+  }
+
   updateHUD(dt) {
-    this.goldText.setText(String(this.gold));
-    this.livesText.setText(String(this.lives));
-    this.waveText.setText(`WAVE ${Math.max(1, this.wave)}/10`);
-    this.scoreText.setText(`SCORE ${this.score}`);
+    this.setTextIfChanged(this.goldText, 'gold', String(this.gold));
+    this.setTextIfChanged(this.livesText, 'lives', String(this.lives));
+    this.setTextIfChanged(this.waveText, 'wave', `WAVE ${Math.max(1, this.wave)}/10`);
+    this.setTextIfChanged(this.scoreText, 'score', `SCORE ${this.score}`);
     let status = '';
     if (this.state !== 'menu') {
-      if (this.spawning) status = `Wave ${this.wave} incoming!`;
+      if (this.levelDone) status = 'LEVEL COMPLETE!';
+      else if (this.spawning) status = `Wave ${this.wave} incoming!`;
       else if (this.countdownActive) {
         const secs = Math.max(0, this.countdown);
         status = this.wave === 0
@@ -1434,10 +1717,9 @@ class Main extends Phaser.Scene {
           : `Wave ${this.wave + 1} in ${Math.ceil(secs)}s  ·  Space: +${Math.floor(secs) * EARLY_GOLD_PER_SEC}g, foes +${Math.round(RUSH_HP * rushHeat(secs) * 100)}% HP`;
       } else if (this.wave >= TOTAL_WAVES) status = 'FINAL WAVE: hold the line!';
     }
-    this.statusText.setText(status);
+    this.setTextIfChanged(this.statusText, 'status', status);
     if (this.coinPop > 0) { this.coinPop = Math.max(0, this.coinPop - dt); this.hudCoin.setScale(1 + this.coinPop * 3); }
 
-    // tower cards
     for (const cd of this.cards) {
       const af = this.gold >= TOWERS[cd.type].cost;
       if (af !== cd.afford) { cd.afford = af; cd.parts.forEach(p => p.setAlpha(af ? 1 : 0.4)); }
@@ -1449,15 +1731,13 @@ class Main extends Phaser.Scene {
         else cd.bg.setStrokeStyle(2, 0x34425a, 1).setFillStyle(0x1f2838);
       }
     }
-    this.infoText.setText(this.infoString());
+    this.setTextIfChanged(this.infoText, 'info', this.infoString());
 
-    // preview
     const final = this.wave >= TOTAL_WAVES;
     const nextW = final ? TOTAL_WAVES : this.wave + 1;
     const key = nextW + (final ? 'f' : '');
     if (key !== this.previewKey) { this.previewKey = key; this.buildPreview(nextW, final); }
 
-    // boss bar
     if (this.boss && !this.boss.dead) {
       const r = Math.max(0, this.boss.hp / this.boss.maxHp);
       this.bossFill.setScale(r, 1);
@@ -1478,7 +1758,7 @@ class Main extends Phaser.Scene {
       const up = t.level < 3 ? `U: upgrade ${upgradeCost(t.type, t.level)}g` : 'MAX LEVEL';
       return `${d.name}  Lv ${t.level}\n${l2}\n${up}  ·  S: sell +${Math.floor(t.spent * 0.6)}g`;
     }
-    if (PATH_GRID[this.cy][this.cx]) return "Path tile\nEnemies walk here, you\ncan't build on it.";
+    if (this.map.grid[this.cy][this.cx]) return "Path tile\nEnemies walk here, you\ncan't build on it.";
     return `Empty tile\n1/2/3 build · click: ${TOWERS[this.selType].name}\nU / S work on towers`;
   }
 
@@ -1487,14 +1767,27 @@ class Main extends Phaser.Scene {
     F.state = this.state;
     F.score = this.score;
     F.lives = this.lives;
-    F.level = Math.max(1, this.wave);
+    F.level = this.mapIdx;
+    F.wave = Math.max(1, this.wave);
     F.gold = this.gold;
-    F.wave = this.wave;
+    F.mapName = this.map.name;
+    F.levelComplete = !!this.levelDone;
   }
 
   // ---------------------------------------------------------------- scripted self-test
-  // Run via ?selftest or window.__FORGE__.selfTest(). Plays a full game with fixed
-  // 1/30s steps and writes the result to window.__FORGE__.selfTestReport.
+  clearBoard() {
+    for (const e of this.enemies) { if (!e.dead) { e.spr.destroy(); e.shadow.destroy(); e.dead = true; } }
+    for (const t of this.towers) [t.base, t.turret, t.glow, t.shadow, t.pips].forEach(o => o && o.destroy());
+    for (const b of this.bolts) this.relImg(this.projPool, b.img);
+    for (const s of this.shells) { this.relImg(this.projPool, s.img); this.relImg(this.projPool, s.sh); }
+    this.enemies = []; this.towers = []; this.bolts = []; this.shells = [];
+    this.towerGrid = [];
+    for (let r = 0; r < ROWS; r++) this.towerGrid.push(new Array(COLS).fill(null));
+    this.boss = null; this.bossParts.forEach(p => p.setVisible(false));
+  }
+
+  // Run via ?selftest or window.__FORGE__.selfTest(). Plays level 1 with fixed
+  // 1/30s steps, validates every map, and writes window.__FORGE__.selfTestReport.
   runSelfTest() {
     Sfx.setMuted(true);
     const checks = [];
@@ -1502,7 +1795,7 @@ class Main extends Phaser.Scene {
     const dt = 1 / 30;
     const step = (secs, until) => {
       for (let t = 0; t < secs; t += dt) {
-        if (this.state !== 'playing') return;
+        if (this.state !== 'playing' || this.levelDone) return;
         this.sim(dt); this.updateParts(dt); this.updateNums(dt);
         if (until && until()) return;
       }
@@ -1510,12 +1803,12 @@ class Main extends Phaser.Scene {
     const at = (c, r) => { this.cx = c; this.cy = r; };
     try {
       this.startGame();
-      chk('start: playing, gold 150, lives 20, level 1', this.state === 'playing' && this.gold === 150 && this.lives === 20 && Math.max(1, this.wave) === 1);
+      chk('start: playing, gold 150, lives 20, map 1, wave 1', this.state === 'playing' && this.gold === 150 && this.lives === 20 && this.mapIdx === 1 && Math.max(1, this.wave) === 1);
       at(0, 2); this.tryPlace('blaster');
       chk('path tile rejects a build', !this.towerGrid[2][0] && this.gold === 150);
       at(4, 3); this.tryPlace('blaster');
       chk('Blaster placed for 50g', !!this.towerGrid[3][4] && this.gold === 100, `gold=${this.gold}`);
-      this.gold += 200; // test funds
+      this.gold += 200;
       const tw = this.towerGrid[3][4];
       let g0 = this.gold; this.tryUpgrade();
       chk('upgrade to L2 (38g, bigger art)', tw.level === 2 && this.gold === g0 - 38 && tw.base.texture.key === 'blaster_b2' && tw.turret.texture.key === 'blaster_t2');
@@ -1532,10 +1825,8 @@ class Main extends Phaser.Scene {
       step(90, () => this.lives < 20);
       chk('leak reduces lives', this.lives < 20 && this.leaks > 0, `lives=${this.lives}`);
 
-      this.gold += 6000; // test funds for a full defense
-      const plan = [[4, 3, 'blaster'], [2, 3, 'blaster'], [6, 3, 'mortar'], [5, 5, 'frost'], [4, 6, 'blaster'], [6, 6, 'blaster'],
-        [8, 3, 'frost'], [10, 3, 'mortar'], [9, 5, 'blaster'], [8, 6, 'mortar'], [10, 6, 'frost'], [12, 3, 'blaster'],
-        [12, 6, 'frost'], [13, 5, 'mortar'], [13, 3, 'frost']];
+      this.gold += 6000;
+      const plan = this.map.plan;
       for (const [c, r, type] of plan) { at(c, r); this.tryPlace(type); this.tryUpgrade(); this.tryUpgrade(); }
       chk('defense built and fully upgraded', this.towers.length === plan.length && this.towers.every(t => t.level === 3), `${this.towers.length} towers`);
 
@@ -1544,9 +1835,9 @@ class Main extends Phaser.Scene {
         if (!slowSeen) for (const e of this.enemies) if (!e.dead && e.slowAmt > 0 && e.tm === 1 && e.spr.texture.key === e.tex + '_ice') { slowSeen = true; break; }
         return false;
       };
-      while (this.state === 'playing' && this.wave < TOTAL_WAVES && guard++ < 30) {
+      while (this.state === 'playing' && !this.levelDone && this.wave < TOTAL_WAVES && guard++ < 30) {
         step(300, () => { watch(); return this.countdownActive; });
-        if (this.state !== 'playing' || !this.countdownActive) break;
+        if (this.state !== 'playing' || this.levelDone || !this.countdownActive) break;
         step(9, watch);
         const cdn = this.countdown, g1 = this.gold;
         this.startNextWave(true);
@@ -1559,9 +1850,55 @@ class Main extends Phaser.Scene {
       step(900, watch);
       chk('Frost slows and tints enemies', slowSeen);
       chk('kills raise the score', this.kills > 0 && this.score > 0, `kills=${this.kills} score=${this.score}`);
-      chk('level reached 10', Math.max(1, this.wave) === 10, `level=${this.wave}`);
+      chk('wave reached 10', Math.max(1, this.wave) === 10, `wave=${this.wave}`);
       chk('boss spawned with HP bar and shake', this._bossSpawned && this._bossBarShown && this._bossShake);
-      chk("state becomes 'won'", this.state === 'won', `state=${this.state} lives=${this.lives}`);
+      chk("level 1 complete screen, state stays 'playing'", this.state === 'playing' && this.levelDone && this.levelO.visible, `state=${this.state} lives=${this.lives}`);
+      this.publish();
+      chk('__FORGE__ reports level 1, wave 10', window.__FORGE__.level === 1 && window.__FORGE__.wave === 10);
+
+      // ---- every map: load, geometry, build rules
+      this.levelO.setVisible(false);
+      this.clearBoard();
+      MAPS.forEach((m, i) => {
+        let genOk = true;
+        try { this.genBoard(m); genOk = this.textures.exists(`board_${m.id}`); } catch (err) { genOk = false; }
+        const err = validateMap(m);
+        chk(`map ${i + 1} ${m.name}: loads, every spawn connects to the exit`, genOk && !err, err || `${m.lanes.length} lane(s), len ${Math.round(m.lanes[0].len / T)} tiles`);
+        const bad = m.plan.filter(([c, r]) => c < 0 || c >= COLS || r < 0 || r >= ROWS || m.grid[r][c]);
+        const uniq = new Set(m.plan.map(p => p[0] + ',' + p[1])).size === m.plan.length;
+        chk(`map ${i + 1}: no tower slot on a path tile`, !bad.length && uniq, bad.map(p => p.join(',')).join(' '));
+        this.map = m;
+        this.towerGrid = [];
+        for (let r = 0; r < ROWS; r++) this.towerGrid.push(new Array(COLS).fill(null));
+        this.gold = 99999;
+        const before = this.towers.length;
+        let pathTiles = 0;
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (m.grid[r][c]) { pathTiles++; at(c, r); this.tryPlace('blaster'); }
+        chk(`map ${i + 1}: building on its ${pathTiles} path tiles is rejected`, this.towers.length === before && pathTiles > 0);
+        this.clearBoard();
+      });
+      chk('only Crossroads crosses itself, drawn as a bridge', MAPS[2].crossings.length === 1 && !!MAPS[2].bridge && MAPS.filter(m => m.crossings.length).length === 1);
+      chk('Twin Gates has two spawns merging into one exit', MAPS[3].lanes.length === 2 && MAPS[3].lanes[0].spawn.y !== MAPS[3].lanes[1].spawn.y);
+
+      // ---- difficulty climbs map to map
+      let climb = true;
+      for (let i = 1; i < MAPS.length; i++) {
+        if (!(waveHp(MAPS[i], 1) > waveHp(MAPS[i - 1], 1) && waveCount(MAPS[i], 1) > waveCount(MAPS[i - 1], 1))) climb = false;
+        if (!(MAPS[i].bossMult > MAPS[i - 1].bossMult)) climb = false;
+      }
+      chk('each map starts stronger and has a tougher boss', climb, MAPS.map(m => Math.round(waveHp(m, 1))).join(' < '));
+
+      // ---- Twin Gates: a wave splits between both gates
+      this.map = MAPS[3]; this.mapIdx = 4;
+      this.state = 'playing'; this.levelDone = false; this.lives = 20; this.gold = 99999;
+      this.wave = 0; this.spawning = false; this.countdownActive = true; this.countdown = FIRST_COUNTDOWN;
+      this.waveAlive = []; this.waveSpawnDone = []; this.waveCleared = []; this.rushHp = [];
+      for (const [c, r, type] of this.map.plan) { at(c, r); this.tryPlace(type); this.tryUpgrade(); this.tryUpgrade(); }
+      const lanesSeen = new Set();
+      this.startNextWave(false);
+      step(14, () => { for (const e of this.enemies) lanesSeen.add(e.laneIdx); return false; });
+      chk('Twin Gates: wave 1 comes from both gates', lanesSeen.size === 2, `lanes seen: ${[...lanesSeen].join(',')}`);
+      this.clearBoard();
     } catch (err) {
       chk('no exceptions', false, err && err.message);
     }
@@ -1578,7 +1915,7 @@ class Main extends Phaser.Scene {
       this.spawnClock += dt;
       while (this.spawnQueue.length && this.spawnQueue[0].t <= this.spawnClock) {
         const s = this.spawnQueue.shift();
-        this.spawnEnemy(s.type, this.wave);
+        this.spawnEnemy(s.type, this.wave, s.lane);
       }
       if (!this.spawnQueue.length) {
         this.spawning = false;
@@ -1599,12 +1936,12 @@ class Main extends Phaser.Scene {
     let j = 0;
     for (let i = 0; i < arr.length; i++) if (!arr[i].dead) arr[j++] = arr[i];
     arr.length = j;
-    if (this.wave >= TOTAL_WAVES && this.waveSpawnDone[TOTAL_WAVES] && !this.spawning && arr.length === 0 && this.lives > 0) this.win();
+    if (this.wave >= TOTAL_WAVES && this.waveSpawnDone[TOTAL_WAVES] && !this.spawning && arr.length === 0 && this.lives > 0) this.finishLevel();
   }
 
   update(time, delta) {
     const dt = Math.min(delta, 50) / 1000;
-    if (this.state === 'playing') {
+    if (this.state === 'playing' && !this.levelDone) {
       this.handleRepeat(dt);
       this.sim(dt);
     }

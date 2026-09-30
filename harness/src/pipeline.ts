@@ -6,11 +6,15 @@ import { converse, currentUsage, effortFor, formatUsage, generateObject, pngBloc
 import { formatReport, playtest, type PlaytestReport } from "./playtest.ts";
 import { CRITIC_SYSTEM, DESIGN_SYSTEM, ENGINEER_SYSTEM } from "./prompts.ts";
 import { Critique, GameSpec } from "./spec.ts";
-import { readSpec, writeShell } from "./template.ts";
+import { addChange, readChanges, readSpec, writeShell } from "./template.ts";
 
 export type RunOptions = { rounds: number; critic: boolean; durationMs: number };
 
 const specText = (spec: GameSpec) => `<design>\n${JSON.stringify(spec, null, 2)}\n</design>`;
+const changesText = (changes: string[]) =>
+  changes.length
+    ? `\n\n<approved_changes>\nThe player approved these changes after the design. They override it, including its outOfScope list.\n\n${changes.map((c, i) => `Change ${i + 1}:\n${c}`).join("\n\n")}\n</approved_changes>`
+    : "";
 const text = (t: string): Anthropic.Beta.BetaTextBlockParam => ({ type: "text", text: t });
 
 const MAX_CONTINUATIONS = 2;
@@ -41,7 +45,8 @@ export class Studio {
   static async resume(dir: string): Promise<Studio> {
     const s = new Studio(dir, await readSpec(dir));
     const source = renderSource(await readSource(dir));
-    s.intro = [text(`${specText(s.spec)}\n\nThis game is already implemented. Current source:\n\n${source}`)];
+    const changes = changesText(await readChanges(dir));
+    s.intro = [text(`${specText(s.spec)}${changes}\n\nThis game is already implemented. Current source:\n\n${source}`)];
     return s;
   }
 
@@ -110,7 +115,7 @@ async function critique(dir: string, spec: GameSpec, report: PlaytestReport): Pr
     "critic",
     CRITIC_SYSTEM,
     [
-      text(specText(spec)),
+      text(specText(spec) + changesText(await readChanges(dir))),
       ...images,
       text(
         `Screenshots: ${report.screenshots.join(", ")} (menu, just after start, after ${report.timeline.at(-1)?.t ?? 0}ms of random input).\n\nState timeline:\n${JSON.stringify(report.timeline)}\n\nPlaytest checks:\n${formatReport(report)}`,
@@ -201,7 +206,8 @@ export async function fix(dir: string, opts: RunOptions) {
 
 /** Apply a human change request to an existing game, then converge again. */
 export async function iterate(dir: string, request: string, opts: RunOptions) {
-  const studio = await Studio.resume(dir);
+  const studio = await Studio.resume(dir); // reads earlier changes; this one arrives as the request
+  await addChange(dir, request);
   console.log("— change");
   await studio.revise(`<change_request>\n${request}\n</change_request>\n\nImplement this change.`);
   return converge(studio, dir, opts);

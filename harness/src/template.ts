@@ -70,3 +70,18 @@ export async function writeShell(dir: string, spec: GameSpec): Promise<void> {
 export async function readSpec(dir: string): Promise<GameSpec> {
   return JSON.parse(await readFile(path.join(dir, "forge", "spec.json"), "utf8"));
 }
+
+// Change requests a person approved after the design, oldest first. They override the
+// design (including its outOfScope list), so the critic and later repairs must see them.
+const changesFile = (dir: string) => path.join(dir, "forge", "changes.md");
+
+export async function readChanges(dir: string): Promise<string[]> {
+  const text = await readFile(changesFile(dir), "utf8").catch(() => "");
+  return text.split(/^## Change \d+\n/m).slice(1).map((c) => c.trim()).filter(Boolean); // [0] is the header
+}
+
+export async function addChange(dir: string, request: string): Promise<void> {
+  const all = [...(await readChanges(dir)), request.trim()];
+  const body = all.map((c, i) => `## Change ${i + 1}\n\n${c}\n`).join("\n");
+  await writeFile(changesFile(dir), `# Approved change requests\n\nThese override the design in spec.json.\n\n${body}`);
+}
