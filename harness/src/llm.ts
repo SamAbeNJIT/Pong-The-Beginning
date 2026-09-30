@@ -72,7 +72,7 @@ const CACHE_1H = { type: "ephemeral" as const, ttl: "1h" as const };
 function base(system: string, effort: Effort) {
   return {
     model: MODEL,
-    max_tokens: 64000,
+    max_tokens: 128000, // Opus 5.5's ceiling; a build at high effort already used 53k
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default" as const, // reroute safety-classifier declines server-side
     thinking: { type: "adaptive" as const },

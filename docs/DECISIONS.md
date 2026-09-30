@@ -28,3 +28,8 @@ Newest entries go at the bottom. Format: what we decided, why, and what else we 
 - **Effort.** Design, repair and critic run at `medium` and build at `high` (from high/xhigh/xhigh/high). Each stage can be overridden with `FORGE_EFFORT_<STAGE>` for sweeps.
 - *Alternatives:* the Batch API (50% off) for eval runs is still open. It doesn't fit the interactive playtest loop, so it's only worth adding if eval spend becomes the main cost.
 
+**011 · Room to build bigger games, and a frame-rate hint for the engineer.**
+- `max_tokens` goes from 64k to 128k, the Opus 5.5 ceiling. The lunar lander build used 53k at `high`, so a richer game would hit the cap and fail the run. Billing is by tokens actually used, so the higher ceiling costs nothing by itself.
+- The engineer prompt now says the playtest runs on software WebGL with a 24 fps floor, and how to stay under it. Two of the lander's four rounds went to fps fixes (12 and 17 fps), and each wasted round costs a repair call plus a playtest. Measure it by counting fps failures across the next runs.
+- *Alternatives:* lowering the fps floor or measuring with GPU rendering. Both would hide real slowness that players on weak machines would see.
+

@@ -75,6 +75,11 @@ feedback. Structure the code cleanly (scenes/systems), but ship working code ove
 clever code. When fixing, find the root cause of every failing check and listed issue
 without regressing anything else; when asked for a change, make it fully.
 
+The playtester measures frame rate in a headless browser with software WebGL and fails
+a game below 24 fps, so keep per-frame work light: draw static scenery once into a
+texture, redraw only what moves, cap particle counts, and update text only when it
+changes.
+
 ${GAME_CONTRACT}
 
 ${OUTPUT_FORMAT}`;
