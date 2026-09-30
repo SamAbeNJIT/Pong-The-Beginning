@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { parseFiles, safeRelPath } from "../src/files.ts";
+import { applyEdits, parseEdits, parseFiles, safeRelPath } from "../src/files.ts";
 import { playtest } from "../src/playtest.ts";
 import { readSpec, writeShell } from "../src/template.ts";
 
@@ -89,4 +89,48 @@ test("safeRelPath blocks escapes and harness-owned files", () => {
     assert.throws(() => safeRelPath(bad), Error, bad);
   }
   assert.equal(safeRelPath("./src/./a.js"), "src/a.js");
+});
+
+test("applyEdits: exact, whitespace-tolerant, line deletion, and clear failures", async () => {
+  const dir = await tmp();
+  await writeFile(path.join(dir, "game.js"), "const a = 1;   \nconst b = 2;\nlet x = 0;\nlet x = 0;\nconst gone = true;\n");
+  const edits = parseEdits(`
+<edit path="game.js">
+<find>
+const a = 1;
+const b = 2;
+</find>
+<replace>
+const a = "$&$1";
+</replace>
+</edit>
+<edit path="game.js">
+<find>
+const gone = true;
+</find>
+<replace>
+</replace>
+</edit>
+<edit path="game.js"><find>
+let x = 0;
+</find><replace>
+let x = 1;
+</replace></edit>
+<edit path="game.js"><find>
+nope();
+</find><replace>
+x
+</replace></edit>
+<edit path="other.js"><find>
+a
+</find><replace>
+b
+</replace></edit>`);
+  assert.equal(edits.length, 5);
+  const failures = await applyEdits(dir, edits);
+  assert.equal(await readFile(path.join(dir, "game.js"), "utf8"), 'const a = "$&$1";\nlet x = 0;\nlet x = 0;\n');
+  assert.equal(failures.length, 3);
+  assert.match(failures[0]!, /edit 3 .*matched 2 times/);
+  assert.match(failures[1]!, /edit 4 .*matched 0 times/);
+  assert.match(failures[2]!, /edit 5 .*does not exist/);
 });

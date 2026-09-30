@@ -31,7 +31,7 @@
 
 | Layer | Now | Later |
 |---|---|---|
-| **Models** | Claude Opus 5 for design, build and repair (adaptive thinking, xhigh effort). Opus 5 as critic. | Route cheap work (critics, bulk asset tagging) to Sonnet 5 or Haiku 4.5. Use the Batch API for nightly evals (50% cheaper). |
+| **Models** | Claude Opus 5.5 for design, build, repair and critic (adaptive thinking, explicit effort per stage). | Route cheap work (critics, bulk asset tagging) to Sonnet 5 or Haiku 4.5. Use the Batch API for nightly evals (50% cheaper). |
 | **Agent runtime** | A deterministic pipeline on the Claude API (`harness/src/pipeline.ts`). Easy to test and cheap to debug. | **Claude Agent SDK** for open-ended multi-file agents (built-in file and bash tools, subagents, hooks, MCP). **Claude Managed Agents** for hosted per-game sandboxes at scale, with rubric-graded outcomes. |
 | **Engines** | Phaser 3.90 (2D) and three.js r186 (3D), vendored. | Godot 4.x through its headless CLI and a Godot MCP server. Unreal 5.7 through Python/Remote Control MCP for AAA visuals. |
 | **Playtesting** | Playwright plus Chromium: contract checks, seeded input fuzzing, screenshots, fps. | Goal-directed agents that play to win (computer use plus the `__FORGE__` state API). Godot headless tests. Crash telemetry through Sentry. |

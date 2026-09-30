@@ -17,3 +17,14 @@ Newest entries go at the bottom. Format: what we decided, why, and what else we 
 **007 · "Shipped" means shipped with no human edits.** A game counts only if the playtest passes and the critic says ship within the round limit. Cost is estimated from token usage × list price per game (`forge/usage.json`), so the numbers stay comparable across runs. *Alternatives:* human-rated only (too slow for a daily loop; that comes in Phase 1 as a second metric).
 
 **008 · Offline pipeline tests against a mock Messages API.** CI covers design → build → repair → critic → eval without a key or network, which catches plumbing regressions for free. Real-model quality lives in `forge eval`, not in CI.
+
+**009 · Default model is now `claude-opus-5-5` (Claude Opus 5.5), replacing 005's `claude-opus-5`.** Requested by Sam. It is cheaper ($4/$20 per MTok vs $5/$25) and stronger per effort level. The harness already meets its requirements: adaptive thinking (always on), explicit effort per stage, no forced tool use, and `fallbacks: "default"` for classifier refusals. Effort levels are unchanged for now; tune them with `forge eval` (Opus 5.5 at `medium` is reported to beat Opus 5 at `high`).
+
+**010 · Cost design: one cached conversation per game, edits instead of rewrites, lower effort.**
+- **One cached thread per game.** Build and every repair are turns of one append-only conversation under one frozen engineer prompt. The system prompt has an explicit 1-hour cache breakpoint, and automatic 1-hour caching covers the growing thread, so later turns re-read the design and all earlier code at the cache-read price ($0.20/MTok on Opus 5.5 instead of $4) and the source isn't resent.
+- **1-hour TTL.** A build or repair can generate for several minutes, which would expire a 5-minute entry before the next turn.
+- **Edits, not rewrites.** Repairs reply with find/replace `<edit>` blocks. Output tokens are 5× the price of input, and a full-file rewrite was the single largest cost. An edit that fails to apply is reported next turn with the file's current contents.
+- **One-shot calls aren't auto-cached.** Design and critic calls end in unique content, so auto-caching would only add the 1.25× write surcharge. They keep only the cached system prompt.
+- **Effort.** Design, repair and critic run at `medium` and build at `high` (from high/xhigh/xhigh/high). Each stage can be overridden with `FORGE_EFFORT_<STAGE>` for sweeps.
+- *Alternatives:* the Batch API (50% off) for eval runs is still open. It doesn't fit the interactive playtest loop, so it's only worth adding if eval spend becomes the main cost.
+

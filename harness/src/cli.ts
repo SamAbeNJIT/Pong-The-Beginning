@@ -3,7 +3,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { runEvals } from "./eval.ts";
 import { formatUsage, withLedger, type Usage } from "./llm.ts";
-import { converge, create, iterate } from "./pipeline.ts";
+import { create, fix, iterate } from "./pipeline.ts";
 import { formatReport, playtest, serve } from "./playtest.ts";
 import { ensureVendor, readSpec } from "./template.ts";
 
@@ -61,7 +61,7 @@ switch (values.help ? undefined : cmd) {
     break;
   case "fix":
     if (!a) throw new Error("usage: forge fix <dir>");
-    done(await withLedger(() => converge(a, opts)));
+    done(await withLedger(() => fix(a, opts)));
     break;
   case "eval": {
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);

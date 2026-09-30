@@ -23,7 +23,7 @@ npm run forge -- serve ../games/<slug>
 ```
 
 ## Layout
-- `harness/src/` is the pipeline: `pipeline.ts` (design, build, critic, repair loop), `playtest.ts`, `prompts.ts` (holds the game contract), `llm.ts` (API calls + cost ledger), `eval.ts`, `spec.ts`, `files.ts`, `template.ts`.
+- `harness/src/` is the pipeline: `pipeline.ts` (design, then a per-game `Studio` thread for build and repairs, critic, convergence loop), `playtest.ts`, `prompts.ts` (holds the game contract), `llm.ts` (API calls + cost ledger), `eval.ts`, `spec.ts`, `files.ts`, `template.ts`.
 - `harness/evals/visions.json` is the eval set. Record every real eval run in the PROGRESS results table.
 - `games/<slug>/` holds one static game each. `forge/` inside it keeps the vision, spec, log and screenshots.
 - `docs/` holds the roadmap, progress and decisions.
@@ -33,6 +33,12 @@ npm run forge -- serve ../games/<slug>
 - Every game follows the contract in `harness/src/prompts.ts`. A change to the contract means updating the playtester, the prompts and the tests together.
 - Use one branch and one PR per task. Keep CI green.
 - TypeScript ESM, `node:test`, and no new dependencies without a note in DECISIONS.
+
+## Cost rules (see DECISIONS 010)
+- Keep system prompts frozen: no timestamps, IDs or per-game text in them. Per-game content goes in messages.
+- Keep a game's conversation append-only. Never edit or drop earlier turns, since that breaks the cache and Opus 5.5's thinking blocks.
+- Repairs are `<edit>` blocks. If output tokens per repair climb, check that the model is still sending edits.
+- Watch the `cache_read` numbers in the logs. If they're 0 on repair turns, caching is broken.
 
 ## Gotchas already hit
 - Pass strings, not arrow functions, to `page.evaluate`. tsx injects a `__name` helper that doesn't exist inside the page.
