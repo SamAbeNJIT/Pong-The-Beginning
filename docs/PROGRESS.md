@@ -46,9 +46,11 @@ Asset pipeline (2D art, SFX), a web studio (chat + live preview + iterate), nigh
 - First real game: `games/gusty-descent` (lunar lander), shipped by the harness with no human edits
 - `games/tiny-bastion` (tower defense), shipped by the harness, then two balance passes via `forge iterate`. Balance bot results: solid play wins 15/20, rushing every wave wins 10/20, 3 idle towers lose at wave 9.
 - `max_tokens` raised to 128k, cut-off builds continue in the thread, fps hint in the engineer prompt (DECISIONS 011–012)
+- Tiny Bastion now has 4 maps (Meadow Run, Switchback, Crossroads, Twin Gates) with level select and unlocks, added through `forge iterate`. Change requests now override the design for the critic (DECISIONS 013).
 
 ## Log
 - 2026-09-27: Wiped the SFML repo. Built harness v0, Pong and the roadmap. Added CLAUDE.md, PROGRESS and DECISIONS. Made the Neon Serpent demo.
 - 2026-09-27: Added the 25-vision eval set, `forge eval`, cost tracking, slug sanitizing, and mock-API pipeline tests (8/8 passing). Blocked on the API key for real runs.
 - 2026-09-30: Moved to Opus 5.5 with prompt caching and edit-based repairs. First real run: Gusty Descent shipped in 4 rounds for ~$2.14.
 - 2026-09-30: Tiny Bastion built ($3.47, plus ~$2.70 lost to an `xhigh` build that hit the output cap). A balance bot showed v1 was unlosable; two `iterate` passes fixed rushing and tightened the endgame. Added cut-off continuation and 128k output.
+- 2026-09-30: Added 3 maps to Tiny Bastion (~$2.07; the iterate rewrote game.js whole, 77k output tokens). The critic flagged the requested maps as out of scope, so approved changes now override the design. The game's self-test passes 35/35. Sam does QA for now.
