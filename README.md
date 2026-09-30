@@ -28,7 +28,7 @@ npm run forge -- playtest ../games/pong      # playtester only, no API calls
 npm test                                     # harness tests (needs Chromium)
 ```
 
-Options: `--engine phaser|three`, `--rounds 4`, `--no-critic`, `--duration 8000`, `--headed`. The model defaults to `claude-opus-5`; set `FORGE_MODEL` to change it.
+Options: `--engine phaser|three`, `--rounds 4`, `--no-critic`, `--duration 8000`, `--headed`. The model defaults to `claude-opus-5-5` (Claude Opus 5.5); set `FORGE_MODEL` to change it.
 
 ## How it works
 

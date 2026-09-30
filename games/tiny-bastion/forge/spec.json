@@ -1,0 +1,174 @@
+{
+  "title": "Tiny Bastion",
+  "slug": "tiny-bastion",
+  "pitch": "A small, polished single-screen tower defense played entirely from the keyboard: steer a build cursor, place and upgrade three tower types, and hold a winding path through 10 escalating waves ending in a boss.",
+  "engine": "phaser",
+  "genre": "Tower defense",
+  "coreLoop": "Watch the incoming-wave preview, move the cursor to a good tile near the path, place or upgrade a tower with the gold earned from kills, then send the next wave early with Space for bonus gold, or let it arrive on its own when the countdown ends.",
+  "mechanics": [
+    "Fixed 16x10 tile grid scaled to fit the viewport. A single hand-authored winding path runs from a left-edge spawn to a right-edge exit. Path tiles cannot be built on.",
+    "Build cursor moves one tile per arrow press. Holding a key repeats after 180ms, then every 70ms. The cursor is clamped to the grid. Clicking a tile with the mouse moves the cursor there and places the last-selected tower type (Blaster by default).",
+    "Blaster costs 50 gold. It fires fast single-target bolts at the enemy furthest along the path: range 2.5 tiles, 8 damage, 0.3s cooldown.",
+    "Mortar costs 80 gold. It lobs a slow arcing shell at the target's position: range 3.5 tiles, 25 splash damage in a 0.9 tile radius, 1.6s cooldown. It cannot hit targets closer than 1 tile.",
+    "Frost costs 70 gold. It pulses every 1.0s, dealing 3 damage and a 40% slow for 1.5s to every enemy in range (2.2 tiles). Slows do not stack; the strongest one applies.",
+    "Upgrade (U) is available twice per tower. Level 2 costs 75% of the base cost and gives +60% damage, +15% range and a faster rate of fire. Level 3 costs 125% of the base cost and gives +150% damage over base, +30% range and a stronger effect (bigger mortar splash, Frost slow 55% then 65%). Each level makes the tower visibly bigger and adds detail such as extra barrels, rings and a glow.",
+    "Sell (S) refunds 60% of the total gold spent on that tower, with a coin sound and floating '+X' text.",
+    "Gold starts at 150. Each enemy has its own kill bounty. Clearing a wave gives +25 gold.",
+    "Waves: after a wave is fully spawned, a 12s countdown starts before the next one. Pressing Space before wave 1 starts it immediately. Pressing Space during a countdown starts the next wave now, with bonus gold equal to the whole seconds remaining times 2. Space does nothing while a wave is still spawning.",
+    "The next-wave preview panel shows the wave number, an icon and count for each enemy type, and a short label such as 'FAST' or 'ARMORED'.",
+    "Armor: Tanks subtract 4 flat damage from each hit (minimum 1). This makes the Mortar and upgraded towers matter against them.",
+    "Healers pulse every 2s and restore 12% max HP to other enemies within 1.5 tiles, shown with a green ring and a '+' particle.",
+    "Boss (wave 10): huge HP and armor 3. It triggers screen shake when it spawns, on heavy hits, and when it dies, plus a boss HP bar across the top of the screen.",
+    "An enemy that reaches the exit costs lives: 1 for normal enemies, 5 for the boss. This triggers a red edge flash and a small shake.",
+    "Damage numbers float up and fade from every hit. Numbers from a group of Frost pulse hits are merged into a single number.",
+    "Hit flashes turn the enemy white for 60ms. On death, the enemy bursts into particles in its own color, plus a coin particle that flies toward the gold HUD.",
+    "A range circle is shown for the tower under the cursor, or for the pending tower type when the tile is empty. The cursor is tinted green if the tile is buildable and affordable, and red otherwise.",
+    "P pauses and unpauses the game, and shows a 'PAUSED' overlay."
+  ],
+  "controls": [
+    {
+      "key": "ArrowUp",
+      "action": "Move build cursor up"
+    },
+    {
+      "key": "ArrowDown",
+      "action": "Move build cursor down"
+    },
+    {
+      "key": "ArrowLeft",
+      "action": "Move build cursor left"
+    },
+    {
+      "key": "ArrowRight",
+      "action": "Move build cursor right"
+    },
+    {
+      "key": "Digit1",
+      "action": "Place Blaster (50g) at the cursor"
+    },
+    {
+      "key": "Digit2",
+      "action": "Place Mortar (80g) at the cursor"
+    },
+    {
+      "key": "Digit3",
+      "action": "Place Frost tower (70g) at the cursor"
+    },
+    {
+      "key": "KeyU",
+      "action": "Upgrade the tower under the cursor"
+    },
+    {
+      "key": "KeyS",
+      "action": "Sell the tower under the cursor for a 60% refund"
+    },
+    {
+      "key": "Space",
+      "action": "Send the next wave early for bonus gold"
+    },
+    {
+      "key": "KeyP",
+      "action": "Pause or resume"
+    },
+    {
+      "key": "Enter",
+      "action": "Start the game from the menu, or restart after a win or loss"
+    }
+  ],
+  "startKey": "Enter",
+  "winCondition": "All wave 10 enemies, including the boss, are killed or have leaked while lives are still above 0. The state becomes 'won' and a victory screen shows the score.",
+  "loseCondition": "Lives reach 0. The state becomes 'lost' immediately and a defeat screen shows the wave reached and the score.",
+  "entities": [
+    {
+      "name": "Blaster",
+      "description": "Cyan square base with a rotating turret barrel. Level 2 has twin barrels and level 3 has triple barrels with a glow. It fires small bright bolts with a muzzle flash."
+    },
+    {
+      "name": "Mortar",
+      "description": "Orange octagon base with a short, thick tube. The shell flies in an arc (scaled circle plus shadow) and explodes in an expanding ring with debris particles. It grows larger and adds rings when upgraded."
+    },
+    {
+      "name": "Frost",
+      "description": "Pale-blue hexagon crystal. Each pulse sends out an expanding translucent ring. Slowed enemies get a blue tint and ice specks. It gets more crystal spikes when upgraded."
+    },
+    {
+      "name": "Runner",
+      "description": "Small yellow triangle. Speed 2.2 tiles/s, 30 HP, bounty 6."
+    },
+    {
+      "name": "Grunt",
+      "description": "Red circle. Speed 1.2 tiles/s, 60 HP, bounty 8. Used as filler in the early waves."
+    },
+    {
+      "name": "Tank",
+      "description": "Large gray-green rounded square with an armor plate outline. Speed 0.7 tiles/s, 220 HP, armor 4, bounty 20."
+    },
+    {
+      "name": "Swarmling",
+      "description": "Tiny pink dot that spawns in tight clusters of 12-20. Speed 1.6 tiles/s, 12 HP, bounty 2."
+    },
+    {
+      "name": "Healer",
+      "description": "Green circle with a white cross. Speed 1.0 tiles/s, 80 HP, bounty 15. Heals nearby enemies."
+    },
+    {
+      "name": "Boss",
+      "description": "Huge purple spiked circle that pulses. Speed 0.45 tiles/s, 3000 HP, armor 3, bounty 200. Costs 5 lives if it leaks."
+    },
+    {
+      "name": "Build Cursor",
+      "description": "Animated corner-bracket square that tints green or red depending on whether the tile can be built on. Shows a range circle and a ghost preview of the tower."
+    },
+    {
+      "name": "HUD",
+      "description": "Top bar with Gold (coin icon), Lives (heart icon), Wave X/10, and either the countdown or 'Space: send early +Ng'. A side or bottom panel shows the next-wave preview and tower costs with their 1/2/3 keys."
+    }
+  ],
+  "artDirection": "Clean flat vector look drawn with Phaser Graphics on a dark slate background. Grass tiles have subtle alternating shades, and the path is a lighter sandy band with rounded corners and a soft inner shadow. Every object has a crisp outline and gets a soft drop shadow (an offset dark ellipse). Tweened easing is used for placement (a pop scale from 0 to 1.1 to 1), upgrades (a flash plus a ring burst), and selling (shrink and fade). Particles are simple circles and squares. Text uses a bold sans-serif with a dark stroke. The spawn and exit are marked with glowing gates.",
+  "palette": [
+    "#1b2230",
+    "#2a3547",
+    "#34425a",
+    "#c9b48a",
+    "#4ee6ff",
+    "#ff9a3c",
+    "#aee3ff",
+    "#ffd84a",
+    "#ff5a5a",
+    "#7fbf6a",
+    "#ff7ac8",
+    "#9b5cff",
+    "#ffffff"
+  ],
+  "audio": "All sound is synthesized with WebAudio. The AudioContext is created on the first key press and runs through a master gain with a light compressor. Sounds: Blaster shot (short square blip with a pitch drop); Mortar launch (low thump) and explosion (filtered noise burst); Frost pulse (a soft sine shimmer with a sweep); hit tick (quiet, throttled to at most 20 per second); enemy death (noise pop plus a rising blip); coin (two-note triangle chime); place (pluck); upgrade (rising arpeggio of three notes); sell (descending chime); invalid action (low buzz); wave start (horn-like saw swell); life lost (low minor-second thud); boss arrival (deep rumbling drone plus a hit); victory fanfare; defeat descending tones. Cursor moves play a very soft tick.",
+  "difficulty": "Wave composition: W1 8 grunts; W2 10 grunts + 4 runners; W3 12 runners; W4 20 swarmlings + 4 grunts; W5 3 tanks + 6 grunts; W6 8 grunts + 2 healers + 6 runners; W7 2x16 swarmlings + 2 healers; W8 5 tanks + 2 healers + 8 runners; W9 mixed (4 tanks, 20 swarmlings, 10 runners, 3 healers); W10 the boss plus escorts (2 tanks, 2 healers, 12 swarmlings). Enemy HP scales by 1 + 0.08 x (wave - 1). Spawn intervals are 0.35-0.9s depending on type. A player who builds sensibly should win with around 5-15 lives left. A player who builds nothing loses by wave 3.",
+  "outOfScope": [
+    "Multiple maps or level select",
+    "Tower targeting mode switching",
+    "Branching upgrade paths",
+    "Save/load or meta progression",
+    "Speed-up (fast forward) button",
+    "Flying enemies or multiple paths",
+    "Mouse-driven upgrade/sell UI (keyboard only for those actions)",
+    "Music track (sound effects only)",
+    "Difficulty settings"
+  ],
+  "acceptance": [
+    "On load, window.__FORGE__.ready becomes true and state is 'menu'. The title 'Tiny Bastion' and 'Press Enter to start' are visible.",
+    "Pressing Enter sets state to 'playing', with score 0, lives 20, level 1 and gold 150 shown in the HUD.",
+    "Arrow keys visibly move the cursor one tile per press, and it cannot leave the grid.",
+    "Pressing 1 on a grass tile with at least 50 gold places a Blaster, and the gold drops by 50. Pressing 1 on a path tile places nothing and plays the invalid buzz.",
+    "Pressing U on a tower upgrades it: the tower visibly grows larger and more detailed, the gold drops, and after 2 upgrades further presses do nothing.",
+    "Pressing S on a tower removes it and refunds 60% of the total gold spent on it.",
+    "The next-wave preview panel always shows the upcoming wave's enemy types and counts.",
+    "Pressing Space during a countdown starts the next wave immediately and awards bonus gold, shown as floating text.",
+    "Towers fire at enemies. Health bars, floating damage numbers, hit flashes and death particles are visible, and __FORGE__.score increases on kills.",
+    "Frost-slowed enemies are tinted blue and move visibly slower.",
+    "An enemy reaching the exit reduces __FORGE__.lives. When lives reach 0, state becomes 'lost'.",
+    "Wave 10 spawns the boss with a top-screen HP bar and screen shake. Clearing it sets state to 'won'.",
+    "Pressing Enter from 'won' or 'lost' restarts with fresh gold, lives and wave.",
+    "__FORGE__.level reflects the current wave number (1-10).",
+    "Pressing P toggles state between 'playing' and 'paused', and the game freezes while paused.",
+    "No console errors occur during a full 10-wave playthrough."
+  ]
+}

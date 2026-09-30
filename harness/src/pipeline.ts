@@ -1,41 +1,107 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parseFiles, readSource, renderSource, writeFiles } from "./files.ts";
-import { currentUsage, formatUsage, generateObject, generateText, pngBlock } from "./llm.ts";
+import type Anthropic from "@anthropic-ai/sdk";
+import { applyEdits, parseEdits, parseFiles, readSource, renderSource, writeFiles, type Edit } from "./files.ts";
+import { converse, currentUsage, effortFor, formatUsage, generateObject, pngBlock, textOf } from "./llm.ts";
 import { formatReport, playtest, type PlaytestReport } from "./playtest.ts";
-import { BUILD_SYSTEM, CRITIC_SYSTEM, DESIGN_SYSTEM, REPAIR_SYSTEM } from "./prompts.ts";
+import { CRITIC_SYSTEM, DESIGN_SYSTEM, ENGINEER_SYSTEM } from "./prompts.ts";
 import { Critique, GameSpec } from "./spec.ts";
 import { readSpec, writeShell } from "./template.ts";
 
 export type RunOptions = { rounds: number; critic: boolean; durationMs: number };
 
 const specText = (spec: GameSpec) => `<design>\n${JSON.stringify(spec, null, 2)}\n</design>`;
+const text = (t: string): Anthropic.Beta.BetaTextBlockParam => ({ type: "text", text: t });
+
+const MAX_CONTINUATIONS = 2;
+const CONTINUE =
+  "Your reply hit the output limit and was cut off. Continue from where you stopped: resend in full any file that was cut off, then send the files you haven't sent yet. Don't resend files that were already complete.";
 
 export async function design(vision: string, engine?: GameSpec["engine"]): Promise<GameSpec> {
   const hint = engine ? `\n\nUse engine "${engine}".` : "";
-  return generateObject("design", DESIGN_SYSTEM, `<vision>\n${vision}\n</vision>${hint}`, "high", GameSpec);
+  return generateObject("design", DESIGN_SYSTEM, `<vision>\n${vision}\n</vision>${hint}`, effortFor("design"), GameSpec);
 }
 
-export async function build(dir: string, spec: GameSpec): Promise<void> {
-  const text = await generateText("build", BUILD_SYSTEM, `${specText(spec)}\n\nImplement this game.`, "xhigh");
-  await writeFiles(dir, parseFiles(text));
-}
+/**
+ * One game's engineering conversation: build, then every repair, as turns of a single
+ * append-only thread. Each turn re-reads the prior turns from cache instead of resending
+ * the source, and repairs come back as small edits instead of whole files.
+ */
+export class Studio {
+  private messages: Anthropic.Beta.BetaMessageParam[] = [];
+  private intro: Anthropic.Beta.BetaTextBlockParam[] = [];
+  private note = ""; // edit failures etc., reported at the start of the next turn
 
-async function repair(dir: string, spec: GameSpec, feedback: string, report?: PlaytestReport): Promise<void> {
-  const source = renderSource(await readSource(dir));
-  const images = [];
-  for (const s of report?.screenshots ?? []) images.push(pngBlock(await readFile(path.join(dir, s))));
-  const text = await generateText(
-    "repair",
-    REPAIR_SYSTEM,
-    [
-      { type: "text", text: `${specText(spec)}\n\n<source>\n${source}\n</source>` },
-      ...images,
-      { type: "text", text: `Screenshots above are ${report?.screenshots.join(", ") || "none"}.\n\n${feedback}` },
-    ],
-    "xhigh",
-  );
-  await writeFiles(dir, parseFiles(text));
+  constructor(
+    private dir: string,
+    private spec: GameSpec,
+  ) {}
+
+  /** For an existing game: the first turn carries the design and current source. */
+  static async resume(dir: string): Promise<Studio> {
+    const s = new Studio(dir, await readSpec(dir));
+    const source = renderSource(await readSource(dir));
+    s.intro = [text(`${specText(s.spec)}\n\nThis game is already implemented. Current source:\n\n${source}`)];
+    return s;
+  }
+
+  async build(): Promise<void> {
+    await this.turn("build", [text(`${specText(this.spec)}\n\nImplement this game.`)], effortFor("build"));
+  }
+
+  async revise(feedback: string, screenshots: string[] = []): Promise<void> {
+    const images = await Promise.all(screenshots.map(async (s) => pngBlock(await readFile(path.join(this.dir, s)))));
+    const shots = screenshots.length ? `Screenshots above: ${screenshots.join(", ")}.\n\n` : "";
+    await this.turn("repair", [...images, text(`${this.note}${shots}${feedback}`)], effortFor("repair"));
+  }
+
+  private async turn(label: string, content: Anthropic.Beta.BetaContentBlockParam[], effort: Parameters<typeof converse>[3]) {
+    const start = this.messages.length;
+    this.messages.push({ role: "user", content: [...this.intro, ...content] });
+    const replies: string[] = [];
+    try {
+      // A reply cut off at max_tokens is kept and continued in the same thread, so a big
+      // build isn't thrown away. Only a cut inside the text can be continued: a cut inside
+      // thinking leaves an unsigned block the API won't accept back.
+      for (let n = 0; ; n++) {
+        const msg = await converse(label, ENGINEER_SYSTEM, this.messages, effort);
+        this.messages.push({ role: "assistant", content: msg.content }); // unchanged, thinking blocks included
+        replies.push(textOf(msg));
+        if (msg.stop_reason !== "max_tokens") break;
+        if (msg.content.at(-1)?.type !== "text" || n === MAX_CONTINUATIONS) {
+          throw new Error(`${label}: output hit max_tokens; try a lower effort (FORGE_EFFORT_${label.toUpperCase()})`);
+        }
+        this.messages.push({ role: "user", content: [text(CONTINUE)] });
+      }
+    } catch (e) {
+      this.messages.length = start; // drop the unfinished turn so the thread stays well-formed
+      throw e;
+    }
+    this.intro = [];
+    this.note = "";
+    // Parse each reply on its own: a file cut off in one is resent whole in the next.
+    const byPath = new Map<string, string>();
+    const edits: Edit[] = [];
+    for (const r of replies) {
+      try {
+        for (const f of parseFiles(r)) byPath.set(f.path, f.content);
+      } catch {}
+      edits.push(...parseEdits(r));
+    }
+    const files = [...byPath].map(([p, c]) => ({ path: p, content: c }));
+    if (!files.length && !edits.length) {
+      this.note = "Your last reply contained no <file> or <edit> blocks, so nothing changed.\n\n";
+      return;
+    }
+    await writeFiles(this.dir, files);
+    const failures = await applyEdits(this.dir, edits);
+    console.log(`  ${files.length} file(s), ${edits.length - failures.length}/${edits.length} edit(s) applied`);
+    if (failures.length) {
+      const paths = new Set(edits.map((e) => e.path));
+      const current = (await readSource(this.dir)).filter((f) => paths.has(f.path));
+      this.note = `Some edits failed to apply:\n${failures.join("\n")}\n\nCurrent contents of those files:\n\n${renderSource(current)}\n\n`;
+    }
+  }
 }
 
 async function critique(dir: string, spec: GameSpec, report: PlaytestReport): Promise<Critique> {
@@ -44,14 +110,13 @@ async function critique(dir: string, spec: GameSpec, report: PlaytestReport): Pr
     "critic",
     CRITIC_SYSTEM,
     [
-      { type: "text", text: specText(spec) },
+      text(specText(spec)),
       ...images,
-      {
-        type: "text",
-        text: `Screenshots: ${report.screenshots.join(", ")} (menu, just after start, after ${report.timeline.at(-1)?.t ?? 0}ms of random input).\n\nState timeline:\n${JSON.stringify(report.timeline)}\n\nPlaytest checks:\n${formatReport(report)}`,
-      },
+      text(
+        `Screenshots: ${report.screenshots.join(", ")} (menu, just after start, after ${report.timeline.at(-1)?.t ?? 0}ms of random input).\n\nState timeline:\n${JSON.stringify(report.timeline)}\n\nPlaytest checks:\n${formatReport(report)}`,
+      ),
     ],
-    "high",
+    effortFor("critic"),
     Critique,
   );
 }
@@ -63,7 +128,7 @@ const critiqueFeedback = (c: Critique) =>
   `<review>\n${c.summary}\n\n${c.issues.map((i) => `- [${i.severity}] ${i.description}`).join("\n")}\n</review>\n\nAddress every issue.`;
 
 /** Playtest -> (repair | critique -> repair) until it ships or rounds run out. */
-export async function converge(dir: string, opts: RunOptions): Promise<{ shipped: boolean; rounds: number }> {
+export async function converge(studio: Studio, dir: string, opts: RunOptions): Promise<{ shipped: boolean; rounds: number }> {
   const spec = await readSpec(dir);
   const log: string[] = [];
   for (let round = 1; round <= opts.rounds; round++) {
@@ -73,8 +138,10 @@ export async function converge(dir: string, opts: RunOptions): Promise<{ shipped
     log.push(`## Round ${round}\n\n\`\`\`\n${formatReport(report)}\n\`\`\``);
 
     let feedback: string;
+    let shots: string[];
     if (!report.passed) {
       feedback = playtestFeedback(report);
+      shots = report.screenshots.slice(-1); // crashes are in the errors; one frame is enough context
     } else if (opts.critic) {
       console.log("— critic");
       const c = await critique(dir, spec, report);
@@ -82,15 +149,16 @@ export async function converge(dir: string, opts: RunOptions): Promise<{ shipped
       log.push(`Critic: **${c.verdict}** — ${c.summary}\n\n${c.issues.map((i) => `- [${i.severity}] ${i.description}`).join("\n")}`);
       if (c.verdict === "ship") return finish(dir, log, true, round);
       feedback = critiqueFeedback(c);
+      shots = report.screenshots; // show the engineer what the critic saw
     } else {
       return finish(dir, log, true, round);
     }
     if (round === opts.rounds) break;
     console.log("— repair");
     try {
-      await repair(dir, spec, feedback, report);
+      await studio.revise(feedback, shots);
     } catch (e) {
-      // A malformed reply shouldn't end the run; the next round re-tests and retries.
+      // A failed call shouldn't end the run; the next round re-tests and retries.
       console.log(`  repair failed: ${(e as Error).message}`);
       log.push(`Repair failed: ${(e as Error).message}`);
     }
@@ -121,14 +189,20 @@ export async function create(
   await writeShell(dir, spec);
   await writeFile(path.join(dir, "forge", "vision.md"), vision + "\n");
   console.log("— build");
-  await build(dir, spec);
-  return { dir, ...(await converge(dir, opts)) };
+  const studio = new Studio(dir, spec);
+  await studio.build();
+  return { dir, ...(await converge(studio, dir, opts)) };
+}
+
+/** Playtest and repair an existing game. */
+export async function fix(dir: string, opts: RunOptions) {
+  return converge(await Studio.resume(dir), dir, opts);
 }
 
 /** Apply a human change request to an existing game, then converge again. */
 export async function iterate(dir: string, request: string, opts: RunOptions) {
-  const spec = await readSpec(dir);
+  const studio = await Studio.resume(dir);
   console.log("— change");
-  await repair(dir, spec, `<change_request>\n${request}\n</change_request>\n\nImplement this change.`);
-  return converge(dir, opts);
+  await studio.revise(`<change_request>\n${request}\n</change_request>\n\nImplement this change.`);
+  return converge(studio, dir, opts);
 }
