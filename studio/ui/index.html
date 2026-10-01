@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+<title>Forge Studio</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="drag traffic"></div>
+    <div class="brand"><span class="mark" aria-hidden="true"></span>Forge Studio</div>
+    <button class="new-game" id="nav-new" type="button"><span aria-hidden="true">＋</span> New game</button>
+    <button class="job-pill" id="nav-job" type="button" hidden></button>
+    <div class="side-label">Library</div>
+    <nav class="library" id="library" aria-label="Your games"></nav>
+    <button class="side-link" id="nav-settings" type="button">Settings</button>
+  </aside>
+
+  <main class="main">
+    <header class="topbar drag"><h1 id="view-title">New game</h1></header>
+    <div class="scroll" id="scroll">
+
+      <!-- New game -->
+      <section class="view" id="view-new">
+        <div class="composer">
+          <label class="eyebrow" for="vision">Your idea</label>
+          <textarea id="vision" rows="5" placeholder="A tiny tower defense on one winding path. Three tower types, upgrades, ten waves and a boss."></textarea>
+          <div class="ideas" id="ideas" aria-label="Try an idea"></div>
+
+          <div class="eyebrow">Harness</div>
+          <div class="profiles" id="profiles" role="radiogroup" aria-label="Harness"></div>
+
+          <div class="row-between">
+            <div>
+              <div class="eyebrow">Style</div>
+              <div class="segmented" id="engine" role="radiogroup" aria-label="Style">
+                <button type="button" data-v="auto" role="radio">Let it choose</button>
+                <button type="button" data-v="phaser" role="radio">2D</button>
+                <button type="button" data-v="three" role="radio">3D</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="notice" id="notice-key" hidden>
+            <span>Add your Anthropic API key to start making games.</span>
+            <button type="button" class="btn ghost" data-goto="settings">Open Settings</button>
+          </div>
+          <div class="notice" id="notice-browser" hidden>
+            <span>Forge playtests every game in a test browser. It's a one-time download of about 150 MB.</span>
+            <button type="button" class="btn ghost" id="install-browser">Install it</button>
+          </div>
+
+          <div class="actions">
+            <span class="hint" id="build-hint"></span>
+            <button type="button" class="btn primary" id="build">Make the game</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- A build or change in progress -->
+      <section class="view" id="view-job" hidden>
+        <div class="job-head">
+          <div>
+            <div class="eyebrow" id="job-kind">New game</div>
+            <h2 id="job-title">Designing your game…</h2>
+            <p class="pitch" id="job-pitch"></p>
+          </div>
+          <div class="job-stats">
+            <div><span class="stat" id="job-cost">$0.00</span><span class="stat-label">spent</span></div>
+            <div><span class="stat" id="job-time">0:00</span><span class="stat-label">elapsed</span></div>
+          </div>
+        </div>
+        <ol class="steps" id="steps">
+          <li data-step="0">Design</li><li data-step="1">Build</li><li data-step="2">Playtest</li>
+          <li data-step="3">Review</li><li data-step="4">Fix</li><li data-step="5">Ready</li>
+        </ol>
+        <div class="round" id="job-round"></div>
+        <div class="job-body">
+          <figure class="shot" id="job-shot"><div class="shot-empty">The first playtest screenshot shows up here.</div></figure>
+          <ul class="feed" id="feed" aria-live="polite"></ul>
+        </div>
+        <details class="log"><summary>Full log</summary><pre id="log"></pre></details>
+        <div class="actions" id="job-actions"></div>
+      </section>
+
+      <!-- One game -->
+      <section class="view" id="view-game" hidden>
+        <div class="game-hero">
+          <figure class="shot" id="game-shot"></figure>
+          <div class="game-info">
+            <div class="chips" id="game-chips"></div>
+            <h2 id="game-title"></h2>
+            <p class="pitch" id="game-pitch"></p>
+            <div class="game-buttons">
+              <button type="button" class="btn primary" id="game-play">Play</button>
+              <button type="button" class="btn ghost" id="game-reveal">Show in Finder</button>
+            </div>
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="panel">
+            <div class="eyebrow">Controls</div>
+            <dl class="controls" id="game-controls"></dl>
+          </div>
+          <div class="panel">
+            <label class="eyebrow" for="change">Change it</label>
+            <textarea id="change" rows="4" placeholder="Add a shop between levels where gold buys permanent upgrades."></textarea>
+            <div class="actions tight">
+              <select id="change-profile" aria-label="Harness for this change"></select>
+              <button type="button" class="btn primary" id="change-go">Apply change</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section class="view" id="view-settings" hidden>
+        <div class="settings">
+          <div class="panel">
+            <div class="eyebrow">Anthropic API key</div>
+            <p class="status" id="key-status"></p>
+            <form class="inline-form" id="key-form">
+              <input id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…">
+              <button type="submit" class="btn primary">Save key</button>
+              <button type="button" class="btn ghost" id="key-clear">Remove</button>
+            </form>
+            <p class="fine">Builds are billed to this key. Make one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">console.anthropic.com</a>.</p>
+          </div>
+          <div class="panel">
+            <div class="eyebrow">Games folder</div>
+            <p class="path" id="games-dir"></p>
+            <button type="button" class="btn ghost" id="games-dir-change">Change…</button>
+          </div>
+          <div class="panel">
+            <div class="eyebrow">Test browser</div>
+            <p class="status" id="browser-status"></p>
+            <button type="button" class="btn ghost" id="browser-install">Install it</button>
+          </div>
+          <div class="panel">
+            <div class="eyebrow">What builds cost</div>
+            <ul class="costs" id="costs"></ul>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

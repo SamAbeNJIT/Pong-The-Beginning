@@ -1,0 +1,80 @@
+{
+  "name": "forge-studio",
+  "productName": "Forge Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Describe a game, pick a harness, and play what Forge builds.",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "postinstall": "npm --prefix ../harness install",
+    "start": "electron .",
+    "test": "node --test test/*.test.mjs",
+    "e2e": "node test/e2e.mjs",
+    "dist": "electron-builder --mac --arm64 && codesign --force --deep --sign - \"dist/mac-arm64/Forge Studio.app\""
+  },
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "dev.forge.studio",
+    "productName": "Forge Studio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.mjs",
+      "core.mjs",
+      "preload.cjs",
+      "ui/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../harness",
+        "to": "harness",
+        "filter": [
+          "package.json",
+          "src/**",
+          "evals/visions.json"
+        ]
+      },
+      {
+        "from": "../harness/node_modules",
+        "to": "harness/node_modules",
+        "filter": [
+          "**/*",
+          "!.cache/**",
+          "!typescript/**",
+          "!@typescript/**",
+          "!@types/**"
+        ]
+      },
+      {
+        "from": "../games",
+        "to": "sample-games",
+        "filter": [
+          "**/*",
+          "!*/vendor/**",
+          "!*/forge/screens/**",
+          "!*/forge/playtest.json"
+        ]
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": null
+    }
+  }
+}

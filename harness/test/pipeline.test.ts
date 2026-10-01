@@ -137,7 +137,10 @@ test("iterate records the change request, and the critic judges against it", asy
   const { result } = await withLedger(() => create("pong", dir, { rounds: 1, critic: false, durationMs: 500 }));
   mock.calls = [];
   mock.bodies = [];
-  await withLedger(() => iterate(result.dir, "Add a second map.", { rounds: 1, critic: true, durationMs: 500 }));
+  const built = JSON.parse(await readFile(path.join(result.dir, "forge/usage.json"), "utf8"));
+  const changed = await withLedger(() => iterate(result.dir, "Add a second map.", { rounds: 1, critic: true, durationMs: 500 }));
+  const after = JSON.parse(await readFile(path.join(result.dir, "forge/usage.json"), "utf8"));
+  assert.ok(Math.abs(after.totalUsd - (built.totalUsd + changed.usage.usd)) < 1e-9, "usage.json keeps a running total");
 
   assert.deepEqual(mock.calls, ["build", "critic"]); // a resumed thread's first turn, then the review
   assert.match(JSON.stringify(mock.bodies[1].messages), /approved_changes.*Change 1:\\nAdd a second map\./);

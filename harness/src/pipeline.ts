@@ -204,8 +204,12 @@ async function finish(dir: string, log: string[], shipped: boolean, rounds: numb
   const cost = usage ? `Cost so far: ${formatUsage(usage)} (estimated from list prices)\n\n` : "";
   const header = `# Forge log\n\nResult: ${shipped ? "SHIPPED" : "NOT SHIPPED (out of rounds)"} after ${rounds} round(s)\n\n${cost}`;
   await writeFile(path.join(dir, "forge", "log.md"), header + log.join("\n\n") + "\n");
-  if (usage) await writeFile(path.join(dir, "forge", "usage.json"), JSON.stringify(usage, null, 2) + "\n");
-  emit("done", { shipped, rounds, dir: path.resolve(dir), usd: usage?.usd });
+  // usage.json holds this run's usage plus totalUsd, the game's cost across every run.
+  const file = path.join(dir, "forge", "usage.json");
+  const before = await readFile(file, "utf8").then(JSON.parse).catch(() => null);
+  const totalUsd = (before?.totalUsd ?? before?.usd ?? 0) + (usage?.usd ?? 0);
+  if (usage) await writeFile(file, JSON.stringify({ ...usage, totalUsd }, null, 2) + "\n");
+  emit("done", { shipped, rounds, dir: path.resolve(dir), usd: usage?.usd, totalUsd });
   return { shipped, rounds };
 }
 
