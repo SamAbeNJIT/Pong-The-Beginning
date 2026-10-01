@@ -45,7 +45,7 @@ export function serve(dir: string, port = 0): Promise<http.Server> {
 }
 
 // Playwright-core pins a Chromium revision; fall back to whatever is installed locally.
-function chromiumPath(): string | undefined {
+export function chromiumPath(): string | undefined {
   if (process.env.FORGE_CHROMIUM) return process.env.FORGE_CHROMIUM;
   try {
     if (existsSync(chromium.executablePath())) return undefined;

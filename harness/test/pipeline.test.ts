@@ -8,19 +8,24 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { runEvals } from "../src/eval.ts";
-import { withLedger } from "../src/llm.ts";
+import { setEventSink, type ForgeEvent } from "../src/events.ts";
+import { useProfile, withLedger } from "../src/llm.ts";
+import { getProfile } from "../src/profiles.ts";
 import { create, iterate } from "../src/pipeline.ts";
 import { addChange, readChanges } from "../src/template.ts";
 
 const PONG = path.resolve(import.meta.dirname, "../../games/pong");
 const CRASH = "notDefined();\n";
-const mock = { spec: {} as Record<string, unknown>, pong: "", build: "", repair: "", cutBuild: false, calls: [] as string[], bodies: [] as any[] };
+const mock = { spec: {} as Record<string, unknown>, pong: "", build: "", repair: "", cutBuild: false, pauseBuild: false, calls: [] as string[], bodies: [] as any[], headers: [] as http.IncomingHttpHeaders[] };
 
 // Streams one text block per request, picking the reply from the system prompt's role.
 // Build and repair share the engineer prompt; a repair is any later turn of that thread.
 function reply(system: string, messages: any[]): [string, string, string?] {
   if (system.includes("gameplay engineer")) {
     const file = `<file path="game.js">\n${mock.build}</file>`;
+    const half = Math.floor(file.length / 2);
+    if (messages.at(-1).role === "assistant") return ["resume", file.slice(half)]; // after pause_turn
+    if (mock.pauseBuild && messages.length === 1) return ["build", file.slice(0, half), "pause_turn"];
     if (JSON.stringify(messages.at(-1)).includes("cut off")) return ["continue", file];
     if (messages.length > 1) return ["repair", mock.repair];
     return mock.cutBuild ? ["build", file.slice(0, 200), "max_tokens"] : ["build", file];
@@ -44,6 +49,12 @@ before(async () => {
       const [role, text, stop = "end_turn"] = reply(JSON.stringify(j.system), j.messages);
       mock.calls.push(role);
       mock.bodies.push(j);
+      mock.headers.push(req.headers);
+      // With the advisor tool on, report one consultation as its own usage iteration.
+      const advised = j.tools?.some((t: any) => t.type === "advisor_20260301");
+      const iterations = advised
+        ? [{ type: "advisor_message", model: "claude-fable-5-1", input_tokens: 1000, output_tokens: 1000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, cache_creation: null }]
+        : null;
       const ev = (type: string, data: object) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
       res.writeHead(200, { "content-type": "text/event-stream" });
       ev("message_start", {
@@ -53,7 +64,7 @@ before(async () => {
       ev("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
       ev("content_block_delta", { index: 0, delta: { type: "text_delta", text } });
       ev("content_block_stop", { index: 0 });
-      ev("message_delta", { delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 2000 } });
+      ev("message_delta", { delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 2000, iterations } });
       ev("message_stop", {});
       res.end();
     });
@@ -132,6 +143,45 @@ test("iterate records the change request, and the critic judges against it", asy
   assert.match(JSON.stringify(mock.bodies[1].messages), /approved_changes.*Change 1:\\nAdd a second map\./);
   await addChange(result.dir, "Make it night.");
   assert.deepEqual(await readChanges(result.dir), ["Add a second map.", "Make it night."]);
+});
+
+test("deluxe: the Fable advisor rides on engineer turns only, is billed at Fable rates, and a paused turn resumes", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "forge-deluxe-"));
+  const events: ForgeEvent[] = [];
+  setEventSink((e) => events.push(e));
+  useProfile(getProfile("deluxe"));
+  mock.build = mock.pong;
+  mock.pauseBuild = true;
+  mock.calls = [];
+  mock.bodies = [];
+  mock.headers = [];
+  try {
+    const { result, usage } = await withLedger(() => create("pong", dir, { rounds: 1, critic: true, durationMs: 500 }));
+    assert.equal(result.shipped, true);
+    assert.equal(await readFile(path.join(result.dir, "game.js"), "utf8"), mock.pong); // the paused halves joined
+
+    assert.deepEqual(mock.calls, ["design", "build", "resume", "critic"]);
+    const [designReq, buildReq, resumeReq, criticReq] = mock.bodies;
+    assert.equal(designReq.tools, undefined);
+    assert.equal(criticReq.tools, undefined);
+    for (const r of [buildReq, resumeReq]) assert.deepEqual(r.tools[0], {
+      type: "advisor_20260301", name: "advisor", model: "claude-fable-5-1", max_uses: 2, max_tokens: 8000, caching: { type: "ephemeral", ttl: "5m" },
+    });
+    assert.match(String(mock.headers[1]!["anthropic-beta"]), /advisor-tool-2026-03-01/);
+    assert.match(JSON.stringify(buildReq.messages), /consult the advisor tool/);
+    assert.deepEqual(resumeReq.messages.map((m: any) => m.role), ["user", "assistant"]); // resent as is
+
+    // 4 executor calls x $0.044 + 2 advisor consultations x (1000 in x $10 + 1000 out x $50) / 1M
+    assert.ok(Math.abs(usage.usd - (4 * 0.044 + 2 * 0.06)) < 1e-9, `usd=${usage.usd}`);
+
+    const types = events.map((e) => (e.type === "stage" ? `stage:${e.stage}` : e.type)).filter((t) => t !== "call");
+    assert.deepEqual(types, ["stage:design", "design", "stage:build", "stage:playtest", "playtest", "stage:review", "review", "done"]);
+    assert.equal(events.find((e) => e.type === "done")!.shipped, true);
+  } finally {
+    setEventSink(undefined);
+    useProfile(getProfile("standard"));
+    mock.pauseBuild = false;
+  }
 });
 
 test("a hostile slug from the model can't escape the output folder", async () => {
