@@ -9,14 +9,14 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { runEvals } from "../src/eval.ts";
 import { setEventSink, type ForgeEvent } from "../src/events.ts";
-import { useProfile, withLedger } from "../src/llm.ts";
+import { describeError, useProfile, withLedger } from "../src/llm.ts";
 import { getProfile } from "../src/profiles.ts";
 import { create, iterate } from "../src/pipeline.ts";
 import { addChange, readChanges } from "../src/template.ts";
 
 const PONG = path.resolve(import.meta.dirname, "../../games/pong");
 const CRASH = "notDefined();\n";
-const mock = { spec: {} as Record<string, unknown>, pong: "", build: "", repair: "", cutBuild: false, pauseBuild: false, calls: [] as string[], bodies: [] as any[], headers: [] as http.IncomingHttpHeaders[] };
+const mock = { spec: {} as Record<string, unknown>, pong: "", build: "", repair: "", cutBuild: false, pauseBuild: false, fault: "" as "" | "drop" | "stall" | "dropAll" | "auth", calls: [] as string[], bodies: [] as any[], headers: [] as http.IncomingHttpHeaders[] };
 
 // Streams one text block per request, picking the reply from the system prompt's role.
 // Build and repair share the engineer prompt; a repair is any later turn of that thread.
@@ -56,11 +56,24 @@ before(async () => {
         ? [{ type: "advisor_message", model: "claude-fable-5-1", input_tokens: 1000, output_tokens: 1000, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, cache_creation: null }]
         : null;
       const ev = (type: string, data: object) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+      // Network faults on design requests: "drop" and "stall" hit once, "dropAll" every time.
+      const fault = role === "design" ? mock.fault : "";
+      if (fault === "auth") {
+        res.writeHead(401, { "content-type": "application/json" });
+        return void res.end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }));
+      }
+      if (fault === "drop" || fault === "stall") mock.fault = "";
       res.writeHead(200, { "content-type": "text/event-stream" });
       ev("message_start", {
         message: { id: "m", type: "message", role: "assistant", model: j.model, content: [], stop_reason: null, stop_sequence: null,
           usage: { input_tokens: 1000, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
       });
+      if (fault === "drop" || fault === "dropAll") {
+        // Mid-stream, like ETIMEDOUT: after the client has the response, so the SDK can't retry it.
+        ev("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
+        return void setTimeout(() => res.socket?.destroy(), 50);
+      }
+      if (fault === "stall") return; // headers sent, then silence until the client gives up
       ev("content_block_start", { index: 0, content_block: { type: "text", text: "" } });
       ev("content_block_delta", { index: 0, delta: { type: "text_delta", text } });
       ev("content_block_stop", { index: 0 });
@@ -184,6 +197,45 @@ test("deluxe: the Fable advisor rides on engineer turns only, is billed at Fable
     setEventSink(undefined);
     useProfile(getProfile("standard"));
     mock.pauseBuild = false;
+  }
+});
+
+test("a dropped or stalled stream is retried and the run carries on; hopeless calls fail in plain words", async () => {
+  Object.assign(process.env, { FORGE_IDLE_MS: "400", FORGE_RETRY_BASE_MS: "10" });
+  const events: ForgeEvent[] = [];
+  setEventSink((e) => events.push(e));
+  mock.build = mock.pong;
+  try {
+    for (const fault of ["drop", "stall"] as const) {
+      mock.fault = fault;
+      mock.calls = [];
+      const dir = await mkdtemp(path.join(os.tmpdir(), `forge-${fault}-`));
+      const { result } = await withLedger(() => create("pong", dir, { rounds: 1, critic: false, durationMs: 500 }));
+      assert.equal(result.shipped, true, fault);
+      assert.deepEqual(mock.calls.slice(0, 3), ["design", "design", "build"], fault);
+    }
+    const retries = events.filter((e) => e.type === "retry");
+    assert.equal(retries.length, 2);
+    assert.match(String(retries[1]!.reason), /no data/);
+
+    mock.fault = "dropAll";
+    mock.calls = [];
+    events.length = 0;
+    const err = await withLedger(() => create("pong", os.tmpdir(), { rounds: 1, critic: false, durationMs: 500 })).catch((e) => e);
+    assert.deepEqual(mock.calls, ["design", "design", "design"]); // three attempts, then give up
+    assert.equal(events.filter((e) => e.type === "retry").length, 2);
+    assert.match(describeError(err), /Lost the connection to Claude/);
+
+    mock.fault = "auth";
+    mock.calls = [];
+    const denied = await withLedger(() => create("pong", os.tmpdir(), { rounds: 1, critic: false, durationMs: 500 })).catch((e) => e);
+    assert.deepEqual(mock.calls, ["design"]); // a bad key isn't retried
+    assert.match(describeError(denied), /rejected the API key/);
+  } finally {
+    mock.fault = "";
+    setEventSink(undefined);
+    delete process.env.FORGE_IDLE_MS;
+    delete process.env.FORGE_RETRY_BASE_MS;
   }
 });
 

@@ -46,6 +46,8 @@ Forge Studio (run from `studio/`): `npm install`, `npm start`, `npm test` (core 
 - Watch the `cache_read` numbers in the logs. If they're 0 on repair turns, caching is broken.
 
 ## Gotchas already hit
+- Streams can die midway (`ETIMEDOUT`, "terminated") and the SDK won't retry that. Every request goes through `send()` in `llm.ts`, which retries and watches for silence. Keep `thinking.display: "summarized"` so the stream never goes quiet while the model thinks.
+- Test fixtures need motion that can't repeat between the two screenshots. A back-and-forth (`sin`) animation sometimes lands in the same spot in both and fails "screen changes".
 - The advisor tool must stay in `tools` for a whole thread once any turn used it. Removing it while the history holds advisor results is a 400, so it comes from the profile and is fixed per run.
 - electron-builder skips `node_modules` inside `extraResources` unless it's its own entry (see `studio/package.json`).
 - Electron on Linux as root needs `--no-sandbox`. The e2e test passes it.

@@ -47,7 +47,10 @@ export async function listGames(games) {
     const usage = await readJson(path.join(dir, "forge", "usage.json")).catch(() => null);
     const changes = await readFile(path.join(dir, "forge", "changes.md"), "utf8").catch(() => "");
     const shot = ["3-play.png", "2-start.png", "1-boot.png"].map((s) => path.join(dir, "forge", "screens", s)).find(existsSync);
-    const status = /Result: SHIPPED/.test(log) ? "shipped" : /Result: NOT SHIPPED/.test(log) ? "unfinished" : "handmade";
+    // No log means the harness didn't finish a run: a hand-built game, or a build that
+    // stopped before writing any code (no game.js), which isn't playable.
+    const hasCode = existsSync(path.join(dir, "game.js"));
+    const status = /Result: SHIPPED/.test(log) ? "shipped" : /Result: NOT SHIPPED/.test(log) ? "unfinished" : hasCode ? "handmade" : "incomplete";
     const modified = (await stat(path.join(dir, "game.js")).catch(() => stat(dir))).mtimeMs;
     out.push({
       slug: e.name,

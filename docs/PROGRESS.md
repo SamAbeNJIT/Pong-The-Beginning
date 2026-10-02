@@ -28,6 +28,8 @@
 4. SessionStart hook so fresh cloud sessions run `npm install` automatically.
 5. Studio: run several builds at once, cancel cleanly mid-turn, show live screenshots between playtests, and add an "export for itch.io" button.
 6. Measure Deluxe (Fable advisor) against Standard at `xhigh` on the eval set before recommending it.
+7. Playtest bot: stop pressing the pause key during random input. In Sam's first Studio game, 3 of 8 seconds were spent paused, so the critic never saw the core rule.
+8. Starter kits (games that work, turned into templates) and a CC0 asset library with search: the biggest cost and quality levers (see the 2026-10-02 discussion).
 
 ## Phase 1 preview (after the gate)
 Asset pipeline (2D art, SFX), a web studio (chat + live preview + iterate), nightly evals in CI, and a human "fun" rating panel. See ROADMAP §2.
@@ -49,6 +51,7 @@ Asset pipeline (2D art, SFX), a web studio (chat + live preview + iterate), nigh
 - First real game: `games/gusty-descent` (lunar lander), shipped by the harness with no human edits
 - `games/tiny-bastion` (tower defense), shipped by the harness, then two balance passes via `forge iterate`. Balance bot results: solid play wins 15/20, rushing every wave wins 10/20, 3 idle towers lose at wave 9.
 - `max_tokens` raised to 128k, cut-off builds continue in the thread, fps hint in the engineer prompt (DECISIONS 011–012)
+- Network resilience: retries, a silence watchdog, summarized thinking, and live progress and Try again in Studio (DECISIONS 016). Prompted by Sam's first build dying with `ETIMEDOUT`.
 - Forge Studio, the Mac app (`studio/`): composer with Quick, Standard and Deluxe harnesses, live build view, library, play windows, change requests, Keychain-stored key, and test browser setup. The e2e test passes from source and packaged (Linux). Not yet run on a real Mac.
 - Harness profiles and the Fable 5.1 advisor (DECISIONS 014–015). One real advisor call confirmed the pairing and usage shape.
 - Tiny Bastion now has 4 maps (Meadow Run, Switchback, Crossroads, Twin Gates) with level select and unlocks, added through `forge iterate`. Change requests now override the design for the critic (DECISIONS 013).
@@ -60,3 +63,4 @@ Asset pipeline (2D art, SFX), a web studio (chat + live preview + iterate), nigh
 - 2026-09-30: Tiny Bastion built ($3.47, plus ~$2.70 lost to an `xhigh` build that hit the output cap). A balance bot showed v1 was unlosable; two `iterate` passes fixed rushing and tightened the endgame. Added cut-off continuation and 128k output.
 - 2026-09-30: Added 3 maps to Tiny Bastion (~$2.07; the iterate rewrote game.js whole, 77k output tokens). The critic flagged the requested maps as out of scope, so approved changes now override the design. The game's self-test passes 35/35. Sam does QA for now.
 - 2026-10-01: Built Forge Studio (Electron) with Quick, Standard and Deluxe harnesses; Deluxe uses Fable 5.1 as an advisor. The e2e test passes from source and as a packaged build. Not yet run on a Mac.
+- 2026-10-02: Sam built his first game in Forge Studio on his M1 (a change run shipped in 1 round for $1.10). A later build died on a dropped connection. Added retries, a watchdog, summarized thinking, live progress and Try again.
