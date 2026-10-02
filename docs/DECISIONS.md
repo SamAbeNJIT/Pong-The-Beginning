@@ -37,3 +37,23 @@ Newest entries go at the bottom. Format: what we decided, why, and what else we 
 **012 · Continue a cut-off build instead of failing the run.** The first Tiny Bastion build ran at `xhigh` and spent the whole 128k output ceiling (about $2.60) before finishing, and the harness threw that output away. Now a reply cut off at `max_tokens` stays in the thread, and the engineer is asked to continue (up to two times). Replies are parsed one at a time, so a file cut off in one reply and resent whole in the next is taken from the resend. A cut inside thinking can't be continued, since the API won't accept an unsigned thinking block back; that still fails, and the error names the effort override. Usage is now recorded before a reply is rejected, so cut-off replies and refusals show up in the cost ledger. Build effort stays at `high`: `xhigh` blew the ceiling on the first real try. *Alternatives:* asking for multi-file output up front (it doesn't cut total tokens) or a task budget (worth trying if cut-offs recur).
 
 **013 · Approved change requests override the design.** `forge iterate` now saves each request in the game's `forge/changes.md`. The critic, and any later resumed thread, gets them in an `<approved_changes>` block that overrides `spec.json`, including its outOfScope list. Before this, the critic judged Tiny Bastion's new maps against the original design, which listed "multiple maps" as out of scope, and started a repair to remove them. I stopped that run before the repair landed. *Alternatives:* rewriting `spec.json` for each change (it loses the original design and can't be audited) or letting the designer re-plan the spec (costs a call, and the redesign could drift from what the player asked for).
+
+**014 · Forge Studio is an Electron app that drives the harness CLI.** Sam wanted a Mac app on an M1 where he can describe a game, have it built, and play it locally.
+- **Electron.** The harness is Node and drives Chromium, so Electron shares the same runtime and needs no second language.
+- **One runtime.** The app spawns the harness with its own Node binary (`ELECTRON_RUN_AS_NODE=1`, `--import tsx`), so the packaged app needs no Node install.
+- **Event stream.** Progress comes back as `@@forge` JSON lines next to the human log.
+- **API key.** It's encrypted with `safeStorage` (the macOS Keychain) and passed to the child through the environment, never argv. If encryption isn't available, the key lives only in memory for the session.
+- **Isolation.** The UI is sandboxed and has no Node access; a fixed preload API is the only bridge. Game windows are sandboxed too and locked to their local server.
+- **Packaging.** `npm run dist` bundles the harness, its `node_modules` and the sample games into `Forge Studio.app`, unsigned for local use.
+- **New dependencies.** `electron` and `electron-builder`, both dev dependencies of `studio/`.
+- **Verification.** An end-to-end test drives the real app under xvfb with Playwright: library, play window, and a full build against a mock API. It passed both from source and as a packaged Linux build.
+- *Alternatives:* a SwiftUI app with a WKWebView (needs Xcode, and a second language for the same work), Tauri (Rust toolchain; the harness still needs Node), or a local web page plus a launcher script (not a real app: no Dock icon, notifications or windows).
+
+**015 · Harness profiles, and Fable 5.1 as an advisor rather than the builder.** The app offers Quick, Standard and Deluxe (`harness/src/profiles.ts`, `--profile`).
+- **Deluxe.** It keeps Opus 5.5 as the executor and adds the advisor tool with `claude-fable-5-1`, at most 2 consultations per request with 8k tokens each, on engineer turns only. Fable costs 2.5× Opus 5.5 per token, so it's consulted on the plan and on hard fixes and doesn't write the code. Opus 5.5 can't be forced to call a tool, so the build and repair turns ask for the consultation in text.
+- **Costs.** Advisor tokens come back as separate `advisor_message` entries in `usage.iterations` and are priced at Fable rates. A real call on 2026-10-01 confirmed the top-level usage is the executor's alone.
+- **Pauses.** Server-side tool loops can stop with `pause_turn`. Those turns are resent as is (no new user message) and their text is joined.
+- **Running total.** `usage.json` now keeps `totalUsd` across runs.
+- **Unmeasured.** The cost-optimization guidance warns that an advisor can buy about what more effort buys. Deluxe needs an eval comparison against Standard at `xhigh` before it earns its price.
+- *Alternatives:* Fable as the builder (2.5× the cost on the largest token stream) or more effort only (cheaper, but no second opinion on design mistakes).
+

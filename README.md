@@ -13,7 +13,26 @@ vision ─▶ Designer ─▶ spec.json ─▶ Builder ─▶ game.js
                                                     games/<slug>/
 ```
 
-## Quickstart
+## Forge Studio (Mac app)
+
+Describe a game, pick a harness, watch it build, and play it in its own window. It runs on Apple Silicon and Intel Macs.
+
+```bash
+brew install node                 # Node 20+, one time
+cd studio
+npm install                       # also installs the harness
+npm start                         # opens Forge Studio
+```
+
+On first launch, add your Anthropic API key in **Settings**. It's encrypted with your Mac's Keychain. If prompted, install the test browser (about 150 MB, one time). To get a real `Forge Studio.app` you can drag into Applications, run `npm run dist`; the app appears in `studio/dist/mac-arm64/`. The packaged app keeps games in `~/Documents/Forge Games`.
+
+| Harness | What it does | Cost and time |
+|---|---|---|
+| Quick | Lighter thinking, 2 fix rounds | about $1–2 · 10 min |
+| Standard | Opus 5.5 builds, tests and fixes until the reviewer signs off | about $2–4 · 15–20 min |
+| Deluxe | Standard, plus Claude Fable 5.1 as an advisor on the plan and hard fixes, 6 rounds | about $4–7 · 20–30 min |
+
+## Quickstart (command line)
 
 ```bash
 cd harness
@@ -28,7 +47,7 @@ npm run forge -- playtest ../games/pong      # playtester only, no API calls
 npm test                                     # harness tests (needs Chromium)
 ```
 
-Options: `--engine phaser|three`, `--rounds 4`, `--no-critic`, `--duration 8000`, `--headed`. The model defaults to `claude-opus-5-5` (Claude Opus 5.5); set `FORGE_MODEL` to change it.
+Options: `--profile quick|standard|deluxe`, `--engine phaser|three`, `--rounds 4`, `--no-critic`, `--duration 8000`, `--headed`. The model defaults to `claude-opus-5-5` (Claude Opus 5.5); set `FORGE_MODEL` to change it.
 
 ## How it works
 
@@ -51,6 +70,7 @@ Every game exposes `window.__FORGE__ = { ready, state, score }`, where `state` i
 ## Layout
 
 ```
+studio/    Forge Studio, the Mac app (Electron) that drives the harness
 harness/   the pipeline and CLI (TypeScript, Node ≥ 20)
 games/     generated games; each folder is a static site you can deploy anywhere
 docs/      roadmap and strategy

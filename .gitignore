@@ -5,3 +5,4 @@ games/*/vendor/
 games/*/forge/screens/
 games/*/forge/playtest.json
 harness/evals/runs/
+studio/dist/

@@ -2,7 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { applyEdits, parseEdits, parseFiles, readSource, renderSource, writeFiles, type Edit } from "./files.ts";
-import { converse, currentUsage, effortFor, formatUsage, generateObject, pngBlock, textOf } from "./llm.ts";
+import { emit } from "./events.ts";
+import { advisorOn, converse, currentUsage, effortFor, formatUsage, generateObject, pngBlock, textOf } from "./llm.ts";
 import { formatReport, playtest, type PlaytestReport } from "./playtest.ts";
 import { CRITIC_SYSTEM, DESIGN_SYSTEM, ENGINEER_SYSTEM } from "./prompts.ts";
 import { Critique, GameSpec } from "./spec.ts";
@@ -18,10 +19,17 @@ const changesText = (changes: string[]) =>
 const text = (t: string): Anthropic.Beta.BetaTextBlockParam => ({ type: "text", text: t });
 
 const MAX_CONTINUATIONS = 2;
+const MAX_PAUSES = 5; // a server-side tool loop (the advisor) can pause a turn; resume it as is
 const CONTINUE =
   "Your reply hit the output limit and was cut off. Continue from where you stopped: resend in full any file that was cut off, then send the files you haven't sent yet. Don't resend files that were already complete.";
 
+// The advisor can't be forced (Opus 5.5 rejects forced tool_choice), so turns ask for it.
+const ADVISE_BUILD =
+  "\n\nYou can consult the advisor tool, which is backed by a stronger model. Call it once before you write any code: share your plan for the code structure and the trickiest mechanics, then follow its advice.";
+const ADVISE_REPAIR = "\n\nIf a root cause isn't obvious, consult the advisor before you edit.";
+
 export async function design(vision: string, engine?: GameSpec["engine"]): Promise<GameSpec> {
+  emit("stage", { stage: "design" });
   const hint = engine ? `\n\nUse engine "${engine}".` : "";
   return generateObject("design", DESIGN_SYSTEM, `<vision>\n${vision}\n</vision>${hint}`, effortFor("design"), GameSpec);
 }
@@ -51,13 +59,16 @@ export class Studio {
   }
 
   async build(): Promise<void> {
-    await this.turn("build", [text(`${specText(this.spec)}\n\nImplement this game.`)], effortFor("build"));
+    emit("stage", { stage: "build" });
+    const ask = `${specText(this.spec)}\n\nImplement this game.${advisorOn() ? ADVISE_BUILD : ""}`;
+    await this.turn("build", [text(ask)], effortFor("build"));
   }
 
   async revise(feedback: string, screenshots: string[] = []): Promise<void> {
     const images = await Promise.all(screenshots.map(async (s) => pngBlock(await readFile(path.join(this.dir, s)))));
     const shots = screenshots.length ? `Screenshots above: ${screenshots.join(", ")}.\n\n` : "";
-    await this.turn("repair", [...images, text(`${this.note}${shots}${feedback}`)], effortFor("repair"));
+    const advise = advisorOn() ? ADVISE_REPAIR : "";
+    await this.turn("repair", [...images, text(`${this.note}${shots}${feedback}${advise}`)], effortFor("repair"));
   }
 
   private async turn(label: string, content: Anthropic.Beta.BetaContentBlockParam[], effort: Parameters<typeof converse>[3]) {
@@ -68,12 +79,18 @@ export class Studio {
       // A reply cut off at max_tokens is kept and continued in the same thread, so a big
       // build isn't thrown away. Only a cut inside the text can be continued: a cut inside
       // thinking leaves an unsigned block the API won't accept back.
-      for (let n = 0; ; n++) {
+      let reply = "";
+      for (let n = 0, pauses = 0; ; ) {
         const msg = await converse(label, ENGINEER_SYSTEM, this.messages, effort);
         this.messages.push({ role: "assistant", content: msg.content }); // unchanged, thinking blocks included
-        replies.push(textOf(msg));
+        reply += textOf(msg);
+        // A paused turn is the same reply continuing: resend as is, no new user message.
+        if (msg.stop_reason === "pause_turn" && pauses++ < MAX_PAUSES) continue;
+        replies.push(reply);
+        reply = "";
         if (msg.stop_reason !== "max_tokens") break;
-        if (msg.content.at(-1)?.type !== "text" || n === MAX_CONTINUATIONS) {
+        n++;
+        if (msg.content.at(-1)?.type !== "text" || n > MAX_CONTINUATIONS) {
           throw new Error(`${label}: output hit max_tokens; try a lower effort (FORGE_EFFORT_${label.toUpperCase()})`);
         }
         this.messages.push({ role: "user", content: [text(CONTINUE)] });
@@ -138,8 +155,16 @@ export async function converge(studio: Studio, dir: string, opts: RunOptions): P
   const log: string[] = [];
   for (let round = 1; round <= opts.rounds; round++) {
     console.log(`\n— round ${round}: playtest`);
+    emit("stage", { stage: "playtest", round });
     const report = await playtest(dir, { durationMs: opts.durationMs });
     console.log(formatReport(report));
+    emit("playtest", {
+      round,
+      passed: report.passed,
+      fps: Math.round(report.fps),
+      checks: report.checks,
+      screenshots: report.screenshots.map((s) => path.resolve(dir, s)),
+    });
     log.push(`## Round ${round}\n\n\`\`\`\n${formatReport(report)}\n\`\`\``);
 
     let feedback: string;
@@ -149,8 +174,10 @@ export async function converge(studio: Studio, dir: string, opts: RunOptions): P
       shots = report.screenshots.slice(-1); // crashes are in the errors; one frame is enough context
     } else if (opts.critic) {
       console.log("— critic");
+      emit("stage", { stage: "review", round });
       const c = await critique(dir, spec, report);
       console.log(`  ${c.verdict}: ${c.summary}`);
+      emit("review", { round, verdict: c.verdict, summary: c.summary, issues: c.issues });
       log.push(`Critic: **${c.verdict}** — ${c.summary}\n\n${c.issues.map((i) => `- [${i.severity}] ${i.description}`).join("\n")}`);
       if (c.verdict === "ship") return finish(dir, log, true, round);
       feedback = critiqueFeedback(c);
@@ -160,6 +187,7 @@ export async function converge(studio: Studio, dir: string, opts: RunOptions): P
     }
     if (round === opts.rounds) break;
     console.log("— repair");
+    emit("stage", { stage: "repair", round });
     try {
       await studio.revise(feedback, shots);
     } catch (e) {
@@ -176,7 +204,12 @@ async function finish(dir: string, log: string[], shipped: boolean, rounds: numb
   const cost = usage ? `Cost so far: ${formatUsage(usage)} (estimated from list prices)\n\n` : "";
   const header = `# Forge log\n\nResult: ${shipped ? "SHIPPED" : "NOT SHIPPED (out of rounds)"} after ${rounds} round(s)\n\n${cost}`;
   await writeFile(path.join(dir, "forge", "log.md"), header + log.join("\n\n") + "\n");
-  if (usage) await writeFile(path.join(dir, "forge", "usage.json"), JSON.stringify(usage, null, 2) + "\n");
+  // usage.json holds this run's usage plus totalUsd, the game's cost across every run.
+  const file = path.join(dir, "forge", "usage.json");
+  const before = await readFile(file, "utf8").then(JSON.parse).catch(() => null);
+  const totalUsd = (before?.totalUsd ?? before?.usd ?? 0) + (usage?.usd ?? 0);
+  if (usage) await writeFile(file, JSON.stringify({ ...usage, totalUsd }, null, 2) + "\n");
+  emit("done", { shipped, rounds, dir: path.resolve(dir), usd: usage?.usd, totalUsd });
   return { shipped, rounds };
 }
 
@@ -191,6 +224,7 @@ export async function create(
   spec.slug = (opts.slug ?? spec.slug).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "game";
   const dir = path.join(outRoot, spec.slug);
   console.log(`  ${spec.title} (${spec.engine}): ${spec.pitch}`);
+  emit("design", { title: spec.title, slug: spec.slug, engine: spec.engine, pitch: spec.pitch, dir: path.resolve(dir) });
   await writeShell(dir, spec);
   await writeFile(path.join(dir, "forge", "vision.md"), vision + "\n");
   console.log("— build");
@@ -209,6 +243,7 @@ export async function iterate(dir: string, request: string, opts: RunOptions) {
   const studio = await Studio.resume(dir); // reads earlier changes; this one arrives as the request
   await addChange(dir, request);
   console.log("— change");
+  emit("stage", { stage: "change" });
   await studio.revise(`<change_request>\n${request}\n</change_request>\n\nImplement this change.`);
   return converge(studio, dir, opts);
 }
