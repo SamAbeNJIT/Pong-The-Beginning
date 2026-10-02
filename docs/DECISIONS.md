@@ -57,3 +57,10 @@ Newest entries go at the bottom. Format: what we decided, why, and what else we 
 - **Unmeasured.** The cost-optimization guidance warns that an advisor can buy about what more effort buys. Deluxe needs an eval comparison against Standard at `xhigh` before it earns its price.
 - *Alternatives:* Fable as the builder (2.5× the cost on the largest token stream) or more effort only (cheaper, but no second opinion on design mistakes).
 
+**016 · Survive dropped connections: retries, a silence watchdog, and summarized thinking.**
+- **What happened.** Sam's first build in Forge Studio died in the design step with `read ETIMEDOUT`. The stream went silent while the model thought, and the connection was cut. The SDK retries a request that fails to start, not a stream that dies midway, so the run crashed, and the app showed $0.00 because cost is only known when a step finishes.
+- **Keep the stream busy.** Every request now asks for `thinking.display: "summarized"`, which is billed the same as the default (omitted) but streams thinking as it happens. Measured on Opus 5.5 at high effort: 41 thinking updates, with the longest gap 4.7 s. Before, a long think was minutes of silence.
+- **Retry midway failures.** `send()` in `llm.ts` retries dropped connections, 5xx and 429 up to 3 times, waiting 5 s and then 15 s. If a stream has sent nothing for 120 s, it's aborted and retried. Bad requests and bad keys aren't retried. A dropped attempt may still be billed for what it generated, and the ledger can't see that.
+- **Tell the person.** The harness emits `progress` (phase, file, lines written), `retry` and `error` events with plain-language messages. Studio shows "Writing game.js · N lines so far", a note after 45 s of silence, each retry, and a **Try again** button on failure. Games whose build stopped before any code are labelled "Not finished" instead of "Hand-built".
+- *Alternatives:* a client-side read timeout only (it would still lose the run), TCP keep-alive tuning (not controllable through the SDK on every OS), or the Batch API (no live progress, wrong for an interactive app).
+

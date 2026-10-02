@@ -57,6 +57,12 @@ function show(view, slug) {
 }
 
 // ---------------------------------------------------------------- library
+const STATUS = { shipped: "Ready", unfinished: "Unfinished", handmade: "Hand-built", incomplete: "Not finished", building: "Building" };
+function statusOf(g) {
+  const j = state.job;
+  const building = j?.status === "running" && (j.slug ?? j.events.find((e) => e.type === "design")?.slug) === g.slug;
+  return building ? "building" : g.status;
+}
 async function loadGames() {
   state.games = await window.forge.listGames();
   renderLibrary();
@@ -69,12 +75,12 @@ function renderLibrary() {
   for (const g of state.games) {
     const thumb = el("span", { className: "lib-thumb" });
     image(g.screenshot).then((src) => src && (thumb.style.backgroundImage = `url("${src}")`));
-    const status = g.status === "handmade" ? "Hand-built" : g.status === "shipped" ? "Ready" : "Unfinished";
+    const status = statusOf(g);
     const item = el(
       "button",
       { className: `lib-item${state.view === "game" && state.selected === g.slug ? " active" : ""}`, type: "button" },
       thumb,
-      el("span", { className: "lib-text" }, el("div", { className: "lib-title", textContent: g.title }), el("div", { className: "lib-sub" }, el("span", { className: `dot ${g.status}` }), status)),
+      el("span", { className: "lib-text" }, el("div", { className: "lib-title", textContent: g.title }), el("div", { className: "lib-sub" }, el("span", { className: `dot ${status === "building" ? "live" : status}` }), STATUS[status])),
     );
     item.onclick = () => show("game", g.slug);
     nav.append(item);
@@ -161,6 +167,36 @@ function stageName(j) {
   return { design: "Designing", build: "Writing the game", change: "Applying your change", playtest: "Playtesting", review: "Reviewing", repair: "Fixing" }[s?.stage] ?? "Starting";
 }
 
+// What the running step is doing right now, from the harness's progress heartbeat.
+function liveText(j) {
+  const stage = lastStage(j)?.stage;
+  if (stage === "playtest") return "Playtesting in the test browser…";
+  const l = j.live;
+  const code = ["build", "change", "repair"].includes(stage);
+  const retry = l?.attempt > 1 ? ` (attempt ${l.attempt})` : "";
+  if (!l || l.phase === "waiting") return `${stageName(j)}… waiting for Claude${retry}`;
+  if (l.phase === "advisor") return `Asking the Fable advisor…${retry}`;
+  if (l.phase === "thinking") return `${code ? "Planning the code" : stage === "review" ? "Reviewing the screenshots" : "Thinking it through"}…${retry}`;
+  if (code) return `Writing ${l.file ?? "code"} · ${l.lines.toLocaleString()} lines so far${retry}`;
+  return `${stage === "review" ? "Writing the review" : "Writing the design"}…${retry}`;
+}
+
+// Silence is normal for a few seconds; past this, say so. The harness itself retries after 2 minutes.
+const QUIET_MS = 45_000;
+function liveSub(j) {
+  const stage = lastStage(j)?.stage;
+  const since = Date.now() - (j.live?.at ?? lastStage(j)?.at ?? j.startedAt);
+  if (stage === "playtest" || since < QUIET_MS) return "";
+  return `No data from Claude for ${Math.round(since / 1000)}s. If the connection dropped, Forge retries on its own.`;
+}
+
+function renderLive() {
+  const row = $("feed").querySelector(".live-row");
+  if (!row || !state.job) return renderJob();
+  row.querySelector(".t").textContent = liveText(state.job);
+  row.querySelector(".sub").textContent = liveSub(state.job);
+}
+
 function adoptJob(job) {
   state.job = job;
   renderJob();
@@ -188,6 +224,8 @@ function describe(e, j) {
     }
     case "review":
       return feedItem(e.verdict === "ship" ? "★" : "↺", e.verdict === "ship" ? "ok" : "warn", e.verdict === "ship" ? "Reviewer signed off" : "Reviewer asked for changes", e.summary.split(/(?<=\.)\s/)[0], e.verdict === "ship" ? [] : e.issues.map((i) => i.description));
+    case "retry":
+      return feedItem("↻", "warn", `Connection to Claude dropped. Retrying (try ${e.attempt} of ${e.of})`, e.reason);
     case "done":
       return feedItem(e.shipped ? "●" : "◐", e.shipped ? "ok" : "warn", e.shipped ? "Ready to play" : `Stopped after ${e.rounds} rounds`, e.shipped ? "Passed the playtest and the review." : "It's playable, but the reviewer didn't sign off. Try a change or play it as is.");
     default:
@@ -216,8 +254,16 @@ async function renderJob() {
   $("job-round").textContent = j.status === "running" && round ? `Round ${round}${rounds ? ` of up to ${rounds}` : ""}` : "";
 
   $("feed").replaceChildren(...j.events.map((e) => describe(e, j)).filter(Boolean).reverse());
-  if (j.status === "running") $("feed").prepend(feedItem("•", "live", `${stageName(j)}…`));
-  if (["failed", "cancelled"].includes(j.status)) $("feed").prepend(feedItem("✗", "bad", j.status === "cancelled" ? "Cancelled" : "The build stopped with an error", "The full log below has the details."));
+  if (j.status === "running") {
+    const row = feedItem("•", "live", liveText(j), " ");
+    row.classList.add("live-row");
+    row.querySelector("div > div").className = "t";
+    row.querySelector(".sub").textContent = liveSub(j);
+    $("feed").prepend(row);
+  }
+  const error = [...j.events].reverse().find((e) => e.type === "error");
+  if (j.status === "cancelled") $("feed").prepend(feedItem("✗", "bad", "Cancelled"));
+  if (j.status === "failed") $("feed").prepend(feedItem("✗", "bad", error?.message ?? "The build stopped with an error.", "Nothing is lost: press Try again. The full log below has the details."));
 
   $("log").textContent = j.log.join("\n");
   const shot = [...j.events].reverse().find((e) => e.type === "playtest");
@@ -241,6 +287,17 @@ async function renderJob() {
       slug && state.games.some((g) => g.slug === slug) ? show("game", slug) : show("new");
     };
     actions.append(close);
+    if (["failed", "cancelled"].includes(j.status)) {
+      const again = el("button", { className: "btn primary", type: "button", textContent: "Try again" });
+      again.onclick = async () => {
+        try {
+          adoptJob(j.kind === "change" ? await window.forge.change({ slug: j.slug, request: j.request, profile: j.profile }) : await window.forge.build({ vision: j.vision, profile: j.profile, engine: j.engine }));
+        } catch (err) {
+          toast(plain(err));
+        }
+      };
+      actions.append(again);
+    }
     if (slug && ["shipped", "unfinished", "done"].includes(j.status)) {
       const playBtn = el("button", { className: "btn primary", type: "button", textContent: "Play now" });
       playBtn.onclick = () => play(slug);
@@ -255,6 +312,7 @@ function tick() {
   const end = j.status === "running" ? Date.now() : j.endedAt ?? Date.now();
   const s = Math.max(0, Math.floor((end - j.startedAt) / 1000));
   $("job-time").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  if (j.status === "running" && state.view === "job") renderLive();
 }
 setInterval(tick, 1000);
 
@@ -262,8 +320,14 @@ window.forge.onJob(async (msg) => {
   if (msg.setup) return;
   const j = state.job;
   if (!j || msg.id !== j.id) return;
+  if (msg.event?.type === "progress") {
+    j.live = { ...msg.event, at: Date.now() };
+    if (state.view === "job") renderLive();
+    return;
+  }
   if (msg.event) {
-    j.events.push(msg.event);
+    j.events.push({ ...msg.event, at: Date.now() });
+    if (msg.event.type === "stage" || msg.event.type === "call") j.live = null;
     if (msg.event.type === "design" || msg.event.type === "done") await loadGames();
   }
   if (msg.log) {
@@ -299,7 +363,7 @@ async function renderGame() {
   $("game-title").textContent = g.title;
   $("game-pitch").textContent = g.pitch;
   const chips = [
-    [g.status === "handmade" ? "Hand-built" : g.status === "shipped" ? "Ready" : "Unfinished", g.status],
+    [STATUS[statusOf(g)], g.status],
     [g.engine === "three" ? "3D" : "2D", ""],
     ...(g.usd != null ? [[`${money(g.usd)} to make`, ""]] : []),
     ...(g.changes ? [[`${g.changes} change${g.changes > 1 ? "s" : ""}`, ""]] : []),
@@ -316,6 +380,9 @@ async function renderGame() {
   }
   const src = await image(g.screenshot);
   $("game-shot").replaceChildren(src ? el("img", { src, alt: `${g.title} screenshot` }) : el("div", { className: "shot-empty", textContent: "No screenshot yet. Play it, or run a change to playtest it." }));
+  const playable = g.status !== "incomplete" && statusOf(g) !== "building";
+  $("game-play").disabled = !playable;
+  $("game-play").title = playable ? "" : "This game hasn't been built yet. Try the build again, or describe a change.";
   $("game-play").onclick = () => play(g.slug);
   $("game-reveal").onclick = () => window.forge.reveal(g.slug);
   const sel = $("change-profile");

@@ -58,7 +58,11 @@ function startJob(spec) {
   const { child, done } = run(forgeArgs(spec, gamesDir()), {
     apiKey: key,
     onEvent: (e) => {
-      job.events.push(e);
+      if (e.type === "progress") job.live = { ...e, at: Date.now() };
+      else {
+        job.events.push({ ...e, at: Date.now() });
+        if (e.type === "stage" || e.type === "call") job.live = null;
+      }
       send({ id, event: e });
     },
     onLog: (line) => {

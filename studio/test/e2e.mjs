@@ -29,6 +29,7 @@ const app = await _electron.launch({
     FORGE_STUDIO_USERDATA: await mkdtemp(path.join(os.tmpdir(), "studio-data-")),
     ANTHROPIC_API_KEY: "sk-ant-test-key-for-the-mock-api-only",
     ANTHROPIC_BASE_URL: api.url,
+    FORGE_RETRY_BASE_MS: "200", // retry fast; production waits 5s, then 15s
   },
 });
 const shot = async (page, name) => page.screenshot({ path: path.join(shots, `${name}.png`) });
@@ -65,11 +66,26 @@ try {
   await win.click("#build");
   await win.waitForSelector("#view-job:not([hidden])");
   await win.waitForSelector(".steps li.now");
+  await win.waitForSelector(".live-row >> text=/Writing game\\.js · \\d+ lines so far/", { timeout: 60000 });
+  await win.waitForSelector(".lib-item >> text=Building");
   await shot(win, "5-building");
   await win.waitForSelector("text=Ready to play", { timeout: 180000 });
   await win.waitForSelector("#job-shot img");
   await shot(win, "6-ready");
   assert.equal(await win.locator(".lib-item").count(), 4);
+
+  // A connection that keeps dropping: three tries, a plain error, then Try again recovers.
+  api.setMode("drop");
+  await win.click("#nav-new");
+  await win.fill("#vision", "Pong on a city rooftop at sunset, first to seven wins.");
+  await win.click("#build");
+  await win.waitForSelector("#job-actions >> text=Try again", { timeout: 60000 });
+  assert.equal(await win.locator("#feed >> text=/Retrying \\(try \\d of 3\\)/").count(), 2);
+  await win.waitForSelector("#feed >> text=Lost the connection to Claude");
+  await shot(win, "7-failed");
+  api.setMode("ok");
+  await win.click("#job-actions >> text=Try again");
+  await win.waitForSelector("#feed >> text=Ready to play", { timeout: 180000 });
   console.log(`e2e passed; screenshots in ${shots}`);
 } finally {
   await app.close();

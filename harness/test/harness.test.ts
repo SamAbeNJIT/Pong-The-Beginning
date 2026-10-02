@@ -44,7 +44,8 @@ test("a game that ignores the start key fails", async () => {
     const g = c.getContext("2d");
     (function loop(t) {
       g.fillStyle = "#123"; g.fillRect(0, 0, 960, 640);
-      g.fillStyle = "#fc0"; g.fillRect(100 + Math.sin(t / 200) * 50, 100, 40, 40);
+      // Drift one way: back-and-forth motion can land in the same spot in both screenshots.
+      g.fillStyle = "#fc0"; g.fillRect(100 + ((t / 5) % 700), 100, 40, 40);
       g.fillStyle = "#0cf"; g.fillRect(500, 300, 80, 20);
       f.ready = true;
       requestAnimationFrame(loop);

@@ -40,11 +40,13 @@ test("library: reads status, cost, changes and screenshot; skips non-games", asy
   await add("handmade", { "game.js": "//", "forge/spec.json": JSON.stringify({ title: "Hand" }) });
   await add("half", { "game.js": "//", "forge/spec.json": "{}", "forge/log.md": "Result: NOT SHIPPED (out of rounds)" });
   await add("no-spec", { "game.js": "//" });
+  await add("crashed", { "forge/spec.json": JSON.stringify({ title: "Crashed" }), "forge/vision.md": "v" });
   await add("Bad Name", { "forge/spec.json": "{}" });
 
   const list = await listGames(games);
   const by = Object.fromEntries(list.map((g) => [g.slug, g]));
-  assert.deepEqual(Object.keys(by).sort(), ["built", "half", "handmade"]);
+  assert.deepEqual(Object.keys(by).sort(), ["built", "crashed", "half", "handmade"]);
+  assert.equal(by.crashed.status, "incomplete");
   assert.equal(by.built.status, "shipped");
   assert.equal(by.built.usd, 3.5);
   assert.equal(by.built.changes, 2);

@@ -100,7 +100,10 @@ function base(system: string, effort: Effort, betas: string[] = []) {
     max_tokens: 128000, // Opus 5.5's ceiling; a build at high effort already used 53k
     betas: ["server-side-fallback-2026-07-01", ...betas],
     fallbacks: "default" as const, // reroute safety-classifier declines server-side
-    thinking: { type: "adaptive" as const },
+    // Summarized thinking streams steadily while the model thinks. With the default
+    // (omitted) a long think is minutes of silence, and home routers drop silent
+    // connections. Billing is the same either way.
+    thinking: { type: "adaptive" as const, display: "summarized" as const },
     system: [{ type: "text" as const, text: system, cache_control: CACHE_1H }],
     output_config: { effort },
   };
@@ -120,6 +123,92 @@ function check(msg: Anthropic.Beta.BetaMessage, label: string, allowCutoff = fal
   }
   if (msg.stop_reason === "max_tokens" && !allowCutoff) {
     throw new Error(`${label}: output hit max_tokens`);
+  }
+}
+
+const env = (name: string, fallback: number) => Number(process.env[name] ?? fallback);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Errors worth another attempt: dropped or stalled connections, overload, rate limits. */
+function retryable(e: unknown) {
+  if (!(e instanceof Anthropic.AnthropicError)) return false; // a bug in our code, not the network
+  if (e instanceof Anthropic.APIError && e.status && e.status < 500) return [408, 409, 429].includes(e.status);
+  return true;
+}
+
+/** Plain words for the app and the log when a call finally fails. */
+export function describeError(e: unknown): string {
+  if (e instanceof Anthropic.APIError && e.status) {
+    if (e.status === 401) return "Claude rejected the API key. Check it in Settings.";
+    if (e.status === 403) return "This API key isn't allowed to use the model.";
+    if (e.status === 429) return "Hit Claude's rate limit. Wait a minute, then try again.";
+    if (e.status >= 500) return "Claude is overloaded right now. Try again in a few minutes.";
+    if (/credit balance/i.test(e.message)) return "Your Anthropic account is out of credits. Add credits in the Anthropic Console, then try again.";
+  }
+  if (e instanceof Anthropic.AnthropicError) {
+    return "Lost the connection to Claude, even after retrying. Check your internet connection, then try again.";
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+type Streamed = { abort(): void; finalMessage(): Promise<unknown>; on(event: "streamEvent", fn: (e: Anthropic.Beta.BetaRawMessageStreamEvent) => void): unknown };
+
+/**
+ * Runs one streamed request to completion. Reports live progress, aborts a stream that
+ * has gone silent, and retries dropped or stalled connections with backoff. The SDK
+ * retries a request that fails to start; a stream that dies midway would otherwise
+ * end the whole run. A dropped attempt may still be billed for what it generated, and
+ * the ledger can't see that.
+ */
+async function send<S extends Streamed>(label: string, open: () => S): Promise<Awaited<ReturnType<S["finalMessage"]>>> {
+  const attempts = env("FORGE_RETRIES", 3);
+  const idleMs = env("FORGE_IDLE_MS", 120_000);
+  for (let attempt = 1; ; attempt++) {
+    const stream = open();
+    let last = Date.now();
+    let stalled = false;
+    let phase = "waiting";
+    let text = "";
+    let received = 0; // stream events so far; a changing count is the app's heartbeat
+    let shown = "";
+    const progress = () => {
+      const lines = text.split("\n").length - 1;
+      const file = [...text.slice(-4000).matchAll(/<(?:file|edit) path="([^"]+)"/g)].at(-1)?.[1];
+      const now = JSON.stringify([phase, lines, file, received]);
+      if (now !== shown) emit("progress", { label, phase, lines, file, attempt });
+      shown = now;
+    };
+    stream.on("streamEvent", (e) => {
+      last = Date.now();
+      received++;
+      if (e.type === "content_block_start") {
+        const b = e.content_block;
+        phase = b.type === "text" ? "writing" : b.type === "server_tool_use" ? "advisor" : b.type === "thinking" ? "thinking" : phase;
+      } else if (e.type === "content_block_delta" && e.delta.type === "text_delta") {
+        text += e.delta.text;
+      }
+    });
+    const tick = setInterval(progress, 1500);
+    const watchdog = setInterval(() => {
+      if (Date.now() - last > idleMs) {
+        stalled = true;
+        stream.abort();
+      }
+    }, Math.min(5000, idleMs / 2));
+    try {
+      return (await stream.finalMessage()) as Awaited<ReturnType<S["finalMessage"]>>;
+    } catch (e) {
+      if (!(stalled || retryable(e)) || attempt >= attempts) throw e;
+      const msg = (e as Error).message;
+      const reason = stalled ? `no data for ${Math.round(idleMs / 1000)}s` : /terminated|ETIMEDOUT|ECONNRESET|socket|network/i.test(msg) ? "the connection was cut" : msg;
+      const wait = env("FORGE_RETRY_BASE_MS", 5000) * 3 ** (attempt - 1);
+      console.log(`  [${label}] connection problem (${reason}); retrying in ${Math.round(wait / 1000)}s (attempt ${attempt + 1} of ${attempts})`);
+      emit("retry", { label, attempt: attempt + 1, of: attempts, reason });
+      await sleep(wait);
+    } finally {
+      clearInterval(tick);
+      clearInterval(watchdog);
+    }
   }
 }
 
@@ -156,9 +245,9 @@ export async function converse(
         ],
       }
     : { betas: [], tools: undefined };
-  const msg = await api()
-    .beta.messages.stream({ ...base(system, effort, advisor.betas), tools: advisor.tools, cache_control: CACHE_1H, messages })
-    .finalMessage();
+  const msg = await send(label, () =>
+    api().beta.messages.stream({ ...base(system, effort, advisor.betas), tools: advisor.tools, cache_control: CACHE_1H, messages }),
+  );
   check(msg, label, true);
   return msg;
 }
@@ -175,13 +264,13 @@ export async function generateObject<S extends z.ZodType>(
   schema: S,
 ): Promise<z.infer<S>> {
   const b = base(system, effort);
-  const msg = await api()
-    .beta.messages.stream({
+  const msg = await send(label, () =>
+    api().beta.messages.stream({
       ...b,
       output_config: { ...b.output_config, format: betaZodOutputFormat(schema) },
       messages: [{ role: "user", content }],
-    })
-    .finalMessage();
+    }),
+  );
   check(msg, label);
   if (msg.parsed_output == null) throw new Error(`${label}: response did not match schema`);
   return msg.parsed_output;

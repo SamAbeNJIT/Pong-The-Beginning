@@ -8,7 +8,7 @@ import { parseArgs } from "node:util";
 import { chromium } from "playwright-core";
 import { emit } from "./events.ts";
 import { runEvals } from "./eval.ts";
-import { formatUsage, useProfile, withLedger, type Usage } from "./llm.ts";
+import { describeError, formatUsage, useProfile, withLedger, type Usage } from "./llm.ts";
 import { create, fix, iterate } from "./pipeline.ts";
 import { chromiumPath, formatReport, playtest, serve } from "./playtest.ts";
 import { getProfile, PROFILES } from "./profiles.ts";
@@ -59,76 +59,83 @@ const done = ({ result, usage }: { result: { shipped: boolean }; usage: Usage })
   process.exitCode = result.shipped ? 0 : 1;
 };
 
-switch (values.help ? undefined : cmd) {
-  case "new": {
-    if (!a) throw new Error('usage: forge new "<vision>"');
-    const engine = values.engine as "phaser" | "three" | undefined;
-    const run = await withLedger(() => create(a, values.out!, { ...opts, engine }));
-    const r = run.result;
-    console.log(`\n${r.shipped ? "Shipped" : "Stopped"}: ${r.dir}\nPlay it: npm run forge -- serve ${r.dir}`);
-    done(run);
-    break;
+try {
+  switch (values.help ? undefined : cmd) {
+    case "new": {
+      if (!a) throw new Error('usage: forge new "<vision>"');
+      const engine = values.engine as "phaser" | "three" | undefined;
+      const run = await withLedger(() => create(a, values.out!, { ...opts, engine }));
+      const r = run.result;
+      console.log(`\n${r.shipped ? "Shipped" : "Stopped"}: ${r.dir}\nPlay it: npm run forge -- serve ${r.dir}`);
+      done(run);
+      break;
+    }
+    case "iterate":
+      if (!a || !b) throw new Error('usage: forge iterate <dir> "<change>"');
+      done(await withLedger(() => iterate(a, b, opts)));
+      break;
+    case "fix":
+      if (!a) throw new Error("usage: forge fix <dir>");
+      done(await withLedger(() => fix(a, opts)));
+      break;
+    case "eval": {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const s = await runEvals({
+        ...opts,
+        file: path.resolve(import.meta.dirname, "../evals/visions.json"),
+        out: path.resolve(import.meta.dirname, "../evals/runs", stamp),
+        only: values.only?.split(","),
+        limit: values.limit ? Number(values.limit) : undefined,
+        concurrency: Number(values.concurrency),
+      });
+      console.log(`Report: harness/evals/runs/${stamp}/summary.md`);
+      process.exitCode = s.shipped === s.games ? 0 : 1;
+      break;
+    }
+    case "playtest": {
+      if (!a) throw new Error("usage: forge playtest <dir>");
+      const r = await playtest(a, { durationMs: opts.durationMs, headed: values.headed });
+      console.log(formatReport(r));
+      process.exitCode = r.passed ? 0 : 1;
+      break;
+    }
+    case "serve": {
+      if (!a) throw new Error("usage: forge serve <dir>");
+      await ensureVendor(a, (await readSpec(a)).engine);
+      const server = await serve(a, Number(values.port));
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      console.log(`Playing ${a} at ${url}  (Ctrl+C to stop)`);
+      emit("serving", { url });
+      break;
+    }
+    case "profiles":
+      console.log(JSON.stringify(Object.values(PROFILES), null, 2));
+      break;
+    case "doctor": {
+      const bundled = (() => {
+        try {
+          return chromium.executablePath();
+        } catch {
+          return "";
+        }
+      })();
+      const browser = chromiumPath() ?? (existsSync(bundled) ? bundled : null);
+      console.log(JSON.stringify({ browser, apiKey: !!process.env.ANTHROPIC_API_KEY }));
+      break;
+    }
+    case "setup": {
+      // Playwright's own installer fetches the Chromium build this playwright-core expects.
+      const cli = path.join(path.dirname(createRequire(import.meta.url).resolve("playwright-core/package.json")), "cli.js");
+      const child = spawn(process.execPath, [cli, "install", "chromium"], { stdio: "inherit" });
+      process.exitCode = await new Promise<number>((r) => child.on("close", (code) => r(code ?? 1)));
+      break;
+    }
+    default:
+      console.log(USAGE);
   }
-  case "iterate":
-    if (!a || !b) throw new Error('usage: forge iterate <dir> "<change>"');
-    done(await withLedger(() => iterate(a, b, opts)));
-    break;
-  case "fix":
-    if (!a) throw new Error("usage: forge fix <dir>");
-    done(await withLedger(() => fix(a, opts)));
-    break;
-  case "eval": {
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const s = await runEvals({
-      ...opts,
-      file: path.resolve(import.meta.dirname, "../evals/visions.json"),
-      out: path.resolve(import.meta.dirname, "../evals/runs", stamp),
-      only: values.only?.split(","),
-      limit: values.limit ? Number(values.limit) : undefined,
-      concurrency: Number(values.concurrency),
-    });
-    console.log(`Report: harness/evals/runs/${stamp}/summary.md`);
-    process.exitCode = s.shipped === s.games ? 0 : 1;
-    break;
-  }
-  case "playtest": {
-    if (!a) throw new Error("usage: forge playtest <dir>");
-    const r = await playtest(a, { durationMs: opts.durationMs, headed: values.headed });
-    console.log(formatReport(r));
-    process.exitCode = r.passed ? 0 : 1;
-    break;
-  }
-  case "serve": {
-    if (!a) throw new Error("usage: forge serve <dir>");
-    await ensureVendor(a, (await readSpec(a)).engine);
-    const server = await serve(a, Number(values.port));
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    console.log(`Playing ${a} at ${url}  (Ctrl+C to stop)`);
-    emit("serving", { url });
-    break;
-  }
-  case "profiles":
-    console.log(JSON.stringify(Object.values(PROFILES), null, 2));
-    break;
-  case "doctor": {
-    const bundled = (() => {
-      try {
-        return chromium.executablePath();
-      } catch {
-        return "";
-      }
-    })();
-    const browser = chromiumPath() ?? (existsSync(bundled) ? bundled : null);
-    console.log(JSON.stringify({ browser, apiKey: !!process.env.ANTHROPIC_API_KEY }));
-    break;
-  }
-  case "setup": {
-    // Playwright's own installer fetches the Chromium build this playwright-core expects.
-    const cli = path.join(path.dirname(createRequire(import.meta.url).resolve("playwright-core/package.json")), "cli.js");
-    const child = spawn(process.execPath, [cli, "install", "chromium"], { stdio: "inherit" });
-    process.exitCode = await new Promise<number>((r) => child.on("close", (code) => r(code ?? 1)));
-    break;
-  }
-  default:
-    console.log(USAGE);
+} catch (e) {
+  // The full error for the log, a plain sentence for the app.
+  console.error(e instanceof Error ? (e.stack ?? e.message) : e);
+  emit("error", { message: describeError(e) });
+  process.exitCode = 1;
 }
